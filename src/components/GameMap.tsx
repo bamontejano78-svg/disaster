@@ -348,12 +348,13 @@ export default function GameMap() {
           .then((osmLocations) => {
             if (cancelled) return;
             setApiError(null);
-            fetchingRef.current = false;
             if (osmLocations.length >= MIN_REAL_LOCATIONS) {
+              fetchingRef.current = false;
               setLocations(osmLocations);
               setDataSource('osm');
               setLoadingLocations(false);
             } else if (osmLocations.length > 0) {
+              fetchingRef.current = false;
               const simulated = generateNearbyLocations(lat, lng);
               const augmented = [...osmLocations, ...simulated.slice(0, 10 - osmLocations.length)];
               setLocations(augmented);
@@ -361,9 +362,9 @@ export default function GameMap() {
               setLoadingLocations(false);
             } else if (!isRetry) {
               // No results on first try — mobile GPS may still be warming up.
-              // Wait 6s and retry with potentially improved coordinates.
+              // Keep fetchingRef=true to block concurrent fetches while waiting
               setApiError('Refinando ubicación GPS...');
-              setDataSource('simulated'); // Show badge so user sees the "refining" message
+              setDataSource('simulated');
               retryTimeoutRef.current = setTimeout(() => {
                 retryTimeoutRef.current = null;
                 if (cancelled) return;
