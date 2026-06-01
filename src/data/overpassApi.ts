@@ -632,9 +632,9 @@ interface OverpassResponse {
 }
 
 // ─── API Configuration ───
-const OVERPASS_ENDPOINT = 'https://overpass-api.de/api/interpreter';
+const OVERPASS_ENDPOINT = '/api/overpass'; // Proxied through Vercel to avoid CORS
 const SEARCH_RADIUS = 1000; // meters
-const REQUEST_TIMEOUT = 8000; // ms
+const REQUEST_TIMEOUT = 12000; // ms (proxy adds some latency)
 const MIN_REAL_LOCATIONS = 5; // augment with simulated if fewer
 
 function buildQuery(lat: number, lng: number, radius: number): string {
