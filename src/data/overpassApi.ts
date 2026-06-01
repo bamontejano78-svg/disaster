@@ -158,33 +158,35 @@ function getCacheKey(lat: number, lng: number): string {
   return `${Math.round(lat * 1000) / 1000},${Math.round(lng * 1000) / 1000}`;
 }
 
-// ─── Single-batch fetcher with endpoint fallback ───
+// ─── Single-batch fetcher with endpoint fallback (no AbortController) ───
 async function fetchSingleBatch(query: string, timeoutMs: number): Promise<OverpassResponse> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
   let lastError: unknown = null;
 
-  try {
-    for (const endpoint of OVERPASS_ENDPOINTS) {
-      try {
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: `data=${encodeURIComponent(query)}`,
-          signal: controller.signal,
-        });
-        if (!response.ok) throw new Error(`HTTP ${response.status} at ${endpoint}`);
-        return await response.json();
-      } catch (err: unknown) {
-        lastError = err;
-        if (err instanceof Error && err.name === 'AbortError') break;
-      }
+  for (const endpoint of OVERPASS_ENDPOINTS) {
+    try {
+      // Simple timeout via Promise.race — no AbortController needed
+      const fetchPromise = fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `data=${encodeURIComponent(query)}`,
+      });
+
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Timeout')), timeoutMs)
+      );
+
+      const response = await Promise.race([fetchPromise, timeoutPromise]);
+
+      if (!response.ok) throw new Error(`HTTP ${response.status} at ${endpoint}`);
+      return await response.json();
+    } catch (err: unknown) {
+      lastError = err;
+      // Always try the fallback endpoint on any error (timeout, network, HTTP, parse)
+      continue;
     }
-    throw lastError || new Error('All endpoints failed');
-  } finally {
-    clearTimeout(timeoutId);
   }
+
+  throw lastError || new Error('All endpoints failed');
 }
 
 // ─── Main fetch: SEQUENTIAL batches to avoid browser connection limit ───

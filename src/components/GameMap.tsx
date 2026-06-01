@@ -251,6 +251,7 @@ export default function GameMap() {
   const [dataSource, setDataSource] = useState<'osm' | 'simulated' | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fetchingRef = useRef(false); // prevent concurrent fetch cycles
   const [explorationEvent, setExplorationEvent] = useState<ExplorationEvent | null>(null);
   const [roamingEvent, setRoamingEvent] = useState<RoamingEvent | null>(null);
   const [encounter, setEncounter] = useState<NPCEncounter | null>(null);
@@ -335,6 +336,10 @@ export default function GameMap() {
   // ─── Generate locations when player position changes ───
   useEffect(() => {
     if (state.playerLat !== null && state.playerLng !== null) {
+      // Prevent concurrent fetch cycles (GPS can fire rapid position updates)
+      if (fetchingRef.current) return;
+      fetchingRef.current = true;
+
       let cancelled = false;
       setLoadingLocations(true);
 
@@ -343,6 +348,7 @@ export default function GameMap() {
           .then((osmLocations) => {
             if (cancelled) return;
             setApiError(null);
+            fetchingRef.current = false;
             if (osmLocations.length >= MIN_REAL_LOCATIONS) {
               setLocations(osmLocations);
               setDataSource('osm');
@@ -365,6 +371,7 @@ export default function GameMap() {
               }, 6000);
             } else {
               // Retry also returned 0 — truly no OSM data in this area
+              fetchingRef.current = false;
               setApiError('Zona sin datos OSM');
               const simulated = generateNearbyLocations(lat, lng);
               setLocations(simulated);
@@ -374,6 +381,7 @@ export default function GameMap() {
           })
           .catch((err: unknown) => {
             if (cancelled) return;
+            fetchingRef.current = false;
             const errorMsg = err instanceof Error ? err.message : String(err);
             console.error('Overpass API error:', errorMsg);
             setApiError(errorMsg);
@@ -391,6 +399,7 @@ export default function GameMap() {
 
       return () => {
         cancelled = true;
+        fetchingRef.current = false;
         if (retryTimeoutRef.current) {
           clearTimeout(retryTimeoutRef.current);
           retryTimeoutRef.current = null;
