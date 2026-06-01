@@ -1,0 +1,108 @@
+import type { Companion } from '../types/game';
+
+export const COMPANIONS: Companion[] = [
+  {
+    id: 'dog_buddy',
+    name: 'Chispas, el Perro',
+    icon: '🐕',
+    description: 'Un perro callejero que te adoptó. Alerta de peligros y encuentra recursos.',
+    factionId: undefined,
+    relationshipMin: 20,
+    passiveBonus: { food: 1 },
+    defenseBonus: 5,
+    cost: { food: 1 },
+    maxDuration: 4,
+  },
+  {
+    id: 'nurse_helper',
+    name: 'Elena, Ayudante Médica',
+    icon: '👩‍⚕️',
+    description: 'La enfermera se une temporalmente. Cura heridas y optimiza medicinas.',
+    factionId: 'survivors',
+    relationshipMin: 60,
+    passiveBonus: { medicine: 2 },
+    defenseBonus: 5,
+    cost: { food: 1, water: 1 },
+    maxDuration: 3,
+  },
+  {
+    id: 'teacher_guard',
+    name: 'Marcos, Vigilante',
+    icon: '👨‍🏫',
+    description: 'El profesor armado vigila el refugio mientras exploras.',
+    factionId: 'survivors',
+    relationshipMin: 60,
+    passiveBonus: { materials: 2 },
+    defenseBonus: 10,
+    cost: { food: 1, water: 1 },
+    maxDuration: 3,
+  },
+  {
+    id: 'merchant_partner',
+    name: 'Rodrigo, Socio Comercial',
+    icon: '🧳',
+    description: 'El comerciante te consigue mejores tratos y encuentra suministros.',
+    factionId: 'merchants',
+    relationshipMin: 60,
+    passiveBonus: { materials: 2, food: 1 },
+    defenseBonus: 0,
+    cost: { food: 1, water: 1 },
+    maxDuration: 4,
+  },
+  {
+    id: 'soldier_escort',
+    name: 'Teniente Vega, Escolta',
+    icon: '🪖',
+    description: 'Un soldado del remanente militar te escolta. Disciplina y protección.',
+    factionId: 'military',
+    relationshipMin: 70,
+    passiveBonus: { fuel: 1, materials: 1 },
+    defenseBonus: 15,
+    cost: { food: 1, water: 1, fuel: 1 },
+    maxDuration: 2,
+  },
+  {
+    id: 'bandit_scout',
+    name: 'El Flaco, Explorador',
+    icon: '🗡️',
+    description: 'Un bandido reconvertido conoce las rutas secretas del yermo.',
+    factionId: 'outlaws',
+    relationshipMin: 60,
+    passiveBonus: { materials: 2, fuel: 1 },
+    defenseBonus: 5,
+    cost: { food: 1, water: 1 },
+    maxDuration: 3,
+  },
+  {
+    id: 'librarian_scholar',
+    name: 'Carmen, Erudita',
+    icon: '👩‍🏫',
+    description: 'La bibliotecaria descubre planos de construcción antiguos.',
+    factionId: 'survivors',
+    relationshipMin: 60,
+    passiveBonus: { materials: 3 },
+    defenseBonus: 5,
+    cost: { food: 1, water: 1 },
+    maxDuration: 4,
+  },
+  {
+    id: 'priest_spiritual',
+    name: 'Antonio, Guía Espiritual',
+    icon: '⛪',
+    description: 'El sacerdote mantiene la moral alta y atrae ayuda de la comunidad.',
+    factionId: 'survivors',
+    relationshipMin: 60,
+    passiveBonus: { food: 1, water: 1 },
+    defenseBonus: 5,
+    cost: { food: 1 },
+    maxDuration: 4,
+  },
+];
+
+export function getCompanion(id: string): Companion | undefined {
+  return COMPANIONS.find((c) => c.id === id);
+}
+
+export function getCompanionsByFaction(factionId: string): Companion[] {
+  return COMPANIONS.filter((c) => c.factionId === factionId);
+}

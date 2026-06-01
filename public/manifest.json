@@ -1,0 +1,17 @@
+{
+  "name": "Seven Days for Disaster",
+  "short_name": "7Days Disaster",
+  "description": "Juego de supervivencia basado en localización real. Recolecta recursos para sobrevivir al desastre semanal.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#1a1a2e",
+  "background_color": "#0f0f23",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

@@ -1,0 +1,524 @@
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, Circle, useMap } from 'react-leaflet';
+import L from 'leaflet';
+import { useGame } from '../context/GameContext';
+import { generateNearbyLocations, LOCATION_COLORS } from '../data/resources';
+import { fetchNearbyLocations, MIN_REAL_LOCATIONS } from '../data/overpassApi';
+import RadarMinimap from './RadarMinimap';
+import { haversineDistance, formatDistance, COLLECTION_RADIUS_METERS } from '../utils/geo';
+import type { ResourceLocation, ResourceType } from '../types/game';
+import { RESOURCE_ICONS } from '../types/game';
+
+// Fix default marker icon issue with bundlers
+import iconUrl from 'leaflet/dist/images/marker-icon.png';
+import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
+import shadowUrl from 'leaflet/dist/images/marker-shadow.png';
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({ iconUrl, iconRetinaUrl, shadowUrl });
+
+// ─── Player marker icon ───
+const playerIcon = L.divIcon({
+  html: `<div style="
+    width:24px;height:24px;
+    background:#3b82f6;
+    border:3px solid white;
+    border-radius:50%;
+    box-shadow:0 0 10px rgba(59,130,246,0.8);
+    animation:pulse-glow 2s infinite;
+  "></div>`,
+  className: '','
+  iconSize: [24, 24],
+  iconAnchor: [12, 12],
+});
+
+// ─── Resource marker icons ───
+// --- Location type display icons ---
+const TYPE_ICONS: Record<string, string> = {
+  supermarket: '🏪'
+  pharmacy: '💊'
+  hardware: '🔧'
+  gas_station: '⛽
+  park: '🌳'
+  hospital: '🏥'
+  bunker: '🛡️'
+  military_base: '🎖️'
+  shelter: '🏕️'
+  mechanical_workshop: '🔩'
+  construction_site: '🏗️'
+  urban_garden: '🥬'
+  bakery: '🥖'
+};
+
+
+function createLocationIcon(type: string, visited: boolean = false): L.DivIcon {
+  const color = visited ? '#4b5563' : (LOCATION_COLORS[type] || '#888');
+  const iconChar = TYPE_ICONS[type] || '📍';
+  return L.divIcon({
+    html: '<div style="' +'
+      'width:28px;height:28px;' +
+      'background:' + color + ';' +
+      'border:2px solid ' + (visited ? '#6b7280' : 'white') + ';' +
+      'border-radius:8px;display:flex;' +
+      'align-items:center;justify-content:center;' +
+      'font-size:14px;' +
+      'box-shadow:0 2px 8px rgba(0,0,0,0.4);' +
+      'transform:rotate(45deg);' +
+      'opacity:' + (visited ? '0.6' : '1') + ';' +
+      'transition:all 0.3s ease;' +
+    '><span style='transform:rotate(-45deg)'>' + iconChar + '</span></div>',
+    className: '','
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+  });
+}
+
+function MapController({
+  playerLat,
+  playerLng,
+}: {
+  playerLat: number | null;
+  playerLng: number | null;
+}) {
+  const map = useMap();
+  useEffect(() => {
+    if (playerLat !== null && playerLng !== null) {
+      map.setView([playerLat, playerLng], map.getZoom(), {
+        animate: true,
+      });
+    }
+  }, [playerLat, playerLng, map]);
+  return null;
+}
+
+// ─── Location Info Panel ───
+function LocationInfo({
+  location,
+  onCollect,
+  visitedToday,
+  playerLat,
+  playerLng,
+}: {
+  location: ResourceLocation;
+  onCollect: () => void;
+  visitedToday: boolean;
+  playerLat: number | null;
+  playerLng: number | null;
+}) {
+  const resources = Object.entries(location.resources) as [
+    ResourceType,
+    number,
+  ][];
+
+  const rarityBadge =
+    location.rarity === 'rare'
+      ? { text: 'Raro', color: 'bg-purple-600 text-purple-100' }
+      : location.rarity === 'legendary'
+        ? { text: 'Legendario', color: 'bg-amber-500 text-amber-900' }
+        : null;
+
+  // Calcular distancia del jugador a la ubicación
+  const distance =
+    playerLat !== null && playerLng !== null
+      ? haversineDistance(playerLat, playerLng, location.lat, location.lng)
+      : null;
+  const inRange = distance !== null && distance <= COLLECTION_RADIUS_METERS;
+
+  return (
+    <div className="bg-gray-900 rounded-lg p-4 w-64 shadow-2xl border border-gray-700">
+      <div className="flex items-center gap-2 mb-1">
+        <h3 className="text-white font-bold text-lg">{location.name}</h3>
+        {rarityBadge && (
+          <span
+            className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${rarityBadge.color}`}
+          >
+            {rarityBadge.text}
+          </span>
+        )}
+      </div>
+      <p className="text-gray-400 text-xs mb-1">{location.description}</p>
+
+      {/* Distance indicator */}
+      {distance !== null && (
+        <div
+          className={`flex items-center gap-1.5 mb-2 text-xs font-mono ${
+            inRange
+              ? 'text-emerald-400'
+              : 'text-amber-400'
+          }`}
+        >
+          <span>{inRange ? '📍' : '📌'}</span>
+          <span>
+            {inRange
+              ? `A ${formatDistance(distance)} — ¡Al alcance!`
+              : `A ${formatDistance(distance)} — demasiado lejos`}
+          </span>
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-1.5 mb-3">
+        {resources.map(([key, val]) => (
+          <span
+            key={key}
+            className="inline-flex items-center gap-1 bg-gray-800 px-2 py-0.5 rounded-full text-xs text-white"
+          >
+            {RESOURCE_ICONS[key]} +{val}
+          </span>
+        ))}
+      </div>
+
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onCollect();
+        }}
+        disabled={visitedToday || !inRange}
+        className={`w-full py-2 px-4 rounded-lg font-bold text-sm transition-all duration-200 ${
+          visitedToday
+            ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
+            : !inRange
+              ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
+              : 'bg-emerald-600 hover:bg-emerald-500 text-white hover:shadow-lg hover:shadow-emerald-500/25 active:scale-95'
+        }`}
+      >
+        {visitedToday
+          ? '✅ Ya recolectado'
+          : !inRange
+            ? `📍 Acércate (${distance !== null ? formatDistance(distance) : '?'})`
+            : '🎒 Recolectar recursos'}
+      </button>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════
+// MAP COMPONENT
+// ══════════════════════════════════════════════════
+export default function GameMap() {
+  const { state, dispatch, collectResources } = useGame();
+  const [locations, setLocations] = useState<ResourceLocation[]>([]);
+  const [selectedLocation, setSelectedLocation] =
+    useState<ResourceLocation | null>(null);
+  const [gpsError, setGpsError] = useState<string | null>(null);
+  const [simulationMode, setSimulationMode] = useState(false);
+  const [loadingLocations, setLoadingLocations] = useState(false);
+  const [dataSource, setDataSource] = useState<'osm' | 'simulated' | null>(null);
+  const watchIdRef = useRef<number | null>(null);
+  const prevLatRef = useRef<number | null>(null);
+  const prevLngRef = useRef<number | null>(null);
+
+  // ─── GPS tracking ───
+  useEffect(() => {
+    if (!navigator.geolocation) {
+      setGpsError('Tu navegador no soporta geolocalización.');
+      // Default to a central location for demo
+      dispatch({
+        type: 'SET_PLAYER_POSITION','
+        lat: 40.4168,
+        lng: -3.7038,
+      });
+      return;
+    }
+
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        // Only update if moved significantly
+        if (
+          prevLatRef.current === null ||
+          Math.abs(prevLatRef.current - latitude) > 0.0001 ||
+          Math.abs(prevLngRef.current! - longitude) > 0.0001
+        ) {
+          prevLatRef.current = latitude;
+          prevLngRef.current = longitude;
+          dispatch({
+            type: 'SET_PLAYER_POSITION','
+            lat: latitude,
+            lng: longitude,
+          });
+        }
+        setGpsError(null);
+      },
+      (err) => {
+        setGpsError(
+          `Error de GPS: ${err.message}. Activa el modo simulación.`
+        );
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 10000,
+        timeout: 15000,
+      }
+    );
+
+    return () => {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+      }
+    };
+  }, []);
+
+  // ─── Generate locations when player position changes ───
+  useEffect(() => {
+    if (state.playerLat !== null && state.playerLng !== null) {
+      let cancelled = false;
+      setLoadingLocations(true);
+
+      fetchNearbyLocations(state.playerLat, state.playerLng)
+        .then((osmLocations) => {
+          if (cancelled) return;
+          const lat = state.playerLat!;
+          const lng = state.playerLng!;
+          if (osmLocations.length >= MIN_REAL_LOCATIONS) {
+            setLocations(osmLocations);
+            setDataSource('osm');
+          } else if (osmLocations.length > 0) {
+            // Some real places, augment with simulated
+            const simulated = generateNearbyLocations(lat, lng);
+            const augmented = [...osmLocations, ...simulated.slice(0, 10 - osmLocations.length)];
+            setLocations(augmented);
+            setDataSource('osm');
+          } else {
+            // No real places found, fall back to simulated
+            const simulated = generateNearbyLocations(lat, lng);
+            setLocations(simulated);
+            setDataSource('simulated');
+          }
+        })
+        .catch(() => {
+          if (cancelled) return;
+          // API failed, fall back to simulated
+          const simulated = generateNearbyLocations(
+            state.playerLat!,
+            state.playerLng!
+          );
+          setLocations(simulated);
+          setDataSource('simulated');
+        })
+        .finally(() => {
+          if (!cancelled) setLoadingLocations(false);
+        });
+
+      return () => {
+        cancelled = true;
+      };
+    }
+  }, [state.playerLat, state.playerLng, state.week]);
+
+  // ─── Default center ───
+  const center: [number, number] =
+    state.playerLat !== null && state.playerLng !== null
+      ? [state.playerLat, state.playerLng]
+      : [40.4168, -3.7038]; // Madrid por defecto
+
+  const handleCollect = useCallback(
+    (location: ResourceLocation) => {
+      collectResources(location.id, location.resources);
+      setSelectedLocation(null);
+    },
+    [collectResources]
+  );
+
+  const canVisit = state.visitedLocations.length < 5; // max 5 visits per day
+
+  return (
+    <div className="relative w-full h-full">
+      {/* GPS Error Banner */}
+      {gpsError && (
+        <div className="absolute top-2 left-2 right-2 z-[1000] bg-red-900/90 text-white text-xs px-3 py-2 rounded-lg border border-red-700 backdrop-blur-sm flex items-center justify-between">
+          <span>⚠️ {gpsError}</span>
+          {!simulationMode && (
+            <button
+              onClick={() => {
+                setSimulationMode(true);
+                setGpsError(null);
+              }}
+              className="ml-2 px-2 py-1 bg-red-700 hover:bg-red-600 rounded text-xs font-bold whitespace-nowrap"
+            >
+              Simular
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Simulation Mode Banner */}
+      {simulationMode && (
+        <div className="absolute top-2 left-2 right-2 z-[1000] bg-amber-900/90 text-white text-xs px-3 py-2 rounded-lg border border-amber-700 backdrop-blur-sm flex items-center justify-between">
+          <span>🕹️ Modo simulación: arrastra el marcador azul para moverte</span>
+          <button
+            onClick={() => {
+              setSimulationMode(false);
+              setGpsError(null);
+            }}
+            className="ml-2 px-2 py-1 bg-amber-700 hover:bg-amber-600 rounded text-xs font-bold whitespace-nowrap"
+          >
+            GPS Real
+          </button>
+        </div>
+      )}
+
+      {/* Visit counter */}
+      <div className="absolute top-16 right-3 z-[1000] bg-gray-900/90 backdrop-blur-sm text-white text-xs px-3 py-1.5 rounded-full border border-gray-700 font-mono">
+        Visitas hoy: {state.visitedLocations.length} / 5
+      </div>
+
+      {/* Data source badge */}
+      {dataSource && (
+        <div
+          className={`absolute top-16 left-3 z-[1000] text-xs px-2 py-1 rounded-full border font-mono transition-all duration-300 ${
+            dataSource === 'osm'
+              ? 'bg-emerald-900/80 text-emerald-300 border-emerald-700'
+              : 'bg-amber-900/80 text-amber-300 border-amber-700'
+          }`}
+        >
+          {dataSource === 'osm' ? '📍 OSM real' : '🎲 Simulado'}
+        </div>
+      )}
+
+      {/* Radar Minimap */}
+      {state.phase === 'playing' && (
+        <RadarMinimap
+          playerLat={state.playerLat}
+          playerLng={state.playerLng}
+          locations={locations}
+          selectedLocation={selectedLocation}
+          visitedLocations={state.visitedLocations}
+          canVisit={canVisit}
+          onSelectLocation={(loc) => {
+            if (canVisit) setSelectedLocation(loc);
+          }}
+        />
+      )}
+
+      {/* Loading overlay for locations */}
+      {loadingLocations && (
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[1000] bg-gray-900/90 backdrop-blur-sm text-white text-sm px-4 py-2 rounded-full border border-gray-700 flex items-center gap-2">
+          <span className="animate-spin">⏳</span>
+          <span>Buscando lugares cercanos...</span>
+        </div>
+      )}
+
+      {/* Map */}
+      <MapContainer
+        center={center}
+        zoom={16}
+        className="w-full h-full"
+        zoomControl={false}
+      >
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+
+        <MapController
+          playerLat={state.playerLat}
+          playerLng={state.playerLng}
+        />
+
+        {/* Player marker */}
+        {state.playerLat !== null && state.playerLng !== null && (
+          <>
+            {/* Collection radius circle */}
+            <Circle
+              center={[state.playerLat, state.playerLng]}
+              radius={COLLECTION_RADIUS_METERS}
+              pathOptions={{
+                color: '#3b82f6','
+                fillColor: '#3b82f6','
+                fillOpacity: 0.08,
+                weight: 2,
+                dashArray: '6 4','
+              }}
+            />
+            <Marker
+              position={[state.playerLat, state.playerLng]}
+              icon={playerIcon}
+              draggable={simulationMode}
+              eventHandlers={
+                simulationMode
+                  ? {
+                      dragend: (e) => {
+                        const marker = e.target;
+                        const pos = marker.getLatLng();
+                        dispatch({
+                          type: 'SET_PLAYER_POSITION','
+                          lat: pos.lat,
+                          lng: pos.lng,
+                        });
+                      },
+                    }
+                  : undefined
+              }
+            >
+              <Popup>
+                <div className="text-center p-1">
+                  <strong>📍 Tú estás aquí</strong>
+                  <br />
+                  <span className="text-xs text-gray-500">
+                    Radio de recolección: {COLLECTION_RADIUS_METERS}m
+                  </span>
+                </div>
+              </Popup>
+            </Marker>
+          </>
+        )}
+
+        {/* Resource locations */}
+        {locations.map((loc) => (
+          <Marker
+            key={loc.id}
+            position={[loc.lat, loc.lng]}
+            icon={createLocationIcon(loc.type, state.visitedLocations.includes(loc.id))}
+            eventHandlers={{
+              click: () => {
+                if (canVisit) setSelectedLocation(loc);
+              },
+            }}
+          >
+            {selectedLocation?.id === loc.id && (
+              <Popup>
+                <LocationInfo
+                  location={loc}
+                  onCollect={() => handleCollect(loc)}
+                  visitedToday={state.visitedLocations.includes(loc.id)}
+                  playerLat={state.playerLat}
+                  playerLng={state.playerLng}
+                />
+              </Popup>
+            )}
+          </Marker>
+        ))}
+      </MapContainer>
+
+      {/* Location detail modal (mobile friendly) */}
+      {selectedLocation && canVisit && (
+        <div
+          className="absolute inset-0 z-[2000] bg-black/60 flex items-end sm:items-center justify-center p-4"
+          onClick={() => setSelectedLocation(null)}
+        >
+          <div
+            className="animate-fade-in-up w-full max-w-sm"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <LocationInfo
+              location={selectedLocation}
+              onCollect={() => handleCollect(selectedLocation)}
+              visitedToday={state.visitedLocations.includes(
+                selectedLocation.id
+              )}
+              playerLat={state.playerLat}
+              playerLng={state.playerLng}
+            />
+            <button
+              onClick={() => setSelectedLocation(null)}
+              className="mt-2 w-full py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-sm transition-colors"
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
