@@ -912,24 +912,33 @@ export async function fetchNearbyLocations(
   });
 
   // Await all batches (resolving fulfilled ones even if some fail)
+  console.log(`[OSM] Fetching ${batches.length} batches for (${lat}, ${lng})...`);
   const results = await Promise.allSettled(batchPromises);
 
+  let succeededBatches = 0;
+  let failedBatches = 0;
   const allElements: OsmElement[] = [];
   for (const result of results) {
     if (result.status === 'fulfilled') {
+      succeededBatches++;
       allElements.push(...result.value.elements);
     } else {
-      console.warn('Overpass API Batch failed:', result.reason);
+      failedBatches++;
+      console.warn('[OSM] Batch failed:', result.reason);
     }
   }
 
+  console.log(`[OSM] ${succeededBatches}/${batches.length} batches OK, ${failedBatches} failed, ${allElements.length} raw elements`);
+
   // If all batches failed entirely, return early so the Map can fallback to simulated data
   if (allElements.length === 0) {
+    console.warn('[OSM] No elements returned — all batches failed or area has no data');
     return [];
   }
 
   // Map and deduplicate (existing function deduplicates and caps result count at 15)
   const locations = mapOsmToLocations(allElements);
+  console.log(`[OSM] After mapping & dedup: ${locations.length} game locations`);
 
   // Only cache results that actually found locations.
   // Empty results are NOT cached so that when the GPS accuracy improves
@@ -946,20 +955,21 @@ export async function fetchNearbyLocations(
 function mapOsmToLocations(elements: OsmElement[]): ResourceLocation[] {
   const locations: ResourceLocation[] = [];
   const seen = new Set<string>();
+  let skippedNoCoords = 0;
+  let skippedNoCategory = 0;
+  let skippedDuplicate = 0;
 
   for (const el of elements) {
-    if (!el.lat || !el.lon) continue;
+    if (!el.lat || !el.lon) { skippedNoCoords++; continue; }
 
     // Find matching category by tags
     const category = findCategory(el.tags ?? {});
-    if (!category) continue;
+    if (!category) { skippedNoCategory++; continue; }
 
     // Deduplicate by name + type
-    const name =
-      el.tags?.name ??
-      category.type;
+    const name = el.tags?.name ?? category.type;
     const dedupKey = `${el.tags?.name ?? el.id}-${category.type}`;
-    if (seen.has(dedupKey)) continue;
+    if (seen.has(dedupKey)) { skippedDuplicate++; continue; }
     seen.add(dedupKey);
 
     // Limit to ~15 locations total
@@ -978,6 +988,72 @@ function mapOsmToLocations(elements: OsmElement[]): ResourceLocation[] {
     });
   }
 
+  console.log(`[OSM] mapOsmToLocations: ${elements.length} elements → ${locations.length} locations (noCoords:${skippedNoCoords}, noCat:${skippedNoCategory}, dup:${skippedDuplicate})`);
+  return locations;
+}
+
+function findCategory(tags: Record<string, string>): OsmCategory | null {
+  for (const [pair, category] of Object.entries(TAG_CATEGORY_MAP)) {
+    const [key, value] = pair.split('=');
+    if (tags[key] === value) return category;
+  }
+  return null;
+}
+
+// ─── Format display name ───
+function formatName(name: string, type: string): string {
+  // If name is just the type, make it friendlier
+  if (name === type || name.length < 2) {
+    const friendlyNames: Record<string, string> = {
+      supermarket: 'Supermercado',
+      pharmacy: 'Farmacia',
+      hardware: 'Ferretería',
+      gas_station: 'Gasolinera',
+      park: 'Parque',
+      hospital: 'Hospital',
+      bunker: 'Búnker',
+      military_base: 'Base Militar',
+      shelter: 'Refugio',
+      mechanical_workshop: 'Taller Mecánico',
+      construction_site: 'Obra',
+      urban_garden: 'Huerta',
+      bakery: 'Panadería',
+      restaurant: 'Restaurante',
+      convenience_store: 'Tienda 24h',
+      clothing_store: 'Tienda de Ropa',
+      educational: 'Centro Educativo',
+      clinic: 'Clínica',
+      hotel: 'Hotel',
+      bank: 'Banco',
+      museum: 'Museo',
+      entertainment: 'Local de Ocio',
+      sports_centre: 'Centro Deportivo',
+      library: 'Biblioteca',
+      bar: 'Bar',
+      post_office: 'Oficina de Correos',
+      community_centre: 'Centro Comunitario',
+      place_of_worship: 'Lugar de Culto',
+      electronics_store: 'Tienda de Electrónica',
+      water_facility: 'Depósito de Agua',
+      landmark: 'Monumento',
+    };
+    return friendlyNames[type] ?? name;
+  }
+  // Capitalize first letter
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+      id: `osm_${el.id}`,
+      name: formatName(name, category.type),
+      type: category.type,
+      lat: el.lat,
+      lng: el.lon,
+      icon: category.icon,
+      resources: { ...category.resources },
+      description: category.description,      maxPerDay: category.maxPerDay,
+    });
+  }
+
+  console.log(`[OSM] mapOsmToLocations: ${elements.length} raw → ${locations.length} locations (noCoords:${skippedNoCoords} noCat:${skippedNoCategory} dup:${skippedDuplicate})`);
   return locations;
 }
 
