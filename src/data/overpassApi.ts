@@ -126,13 +126,11 @@ interface OsmElement {
 interface OverpassResponse { elements: OsmElement[]; }
 
 // ─── Configuration ───
-const OVERPASS_ENDPOINTS = [
-  'https://overpass.kumi.systems/api/interpreter',
-  'https://overpass-api.de/api/interpreter'
-];
+// Use Vercel serverless function as proxy to avoid CORS issues on mobile
+const OVERPASS_ENDPOINT = '/api/overpass';
 const SEARCH_RADIUS = 2000;
-const BATCH_SIZE = 20; // bigger batches = fewer sequential requests
-const REQUEST_TIMEOUT = 20000; // 20s per batch (sequential, so more generous)
+const BATCH_SIZE = 20;
+const REQUEST_TIMEOUT = 25000; // 25s per batch (proxy adds latency)
 export const MIN_REAL_LOCATIONS = 5;
 
 // ─── Helpers ───
@@ -158,35 +156,30 @@ function getCacheKey(lat: number, lng: number): string {
   return `${Math.round(lat * 1000) / 1000},${Math.round(lng * 1000) / 1000}`;
 }
 
-// ─── Single-batch fetcher with endpoint fallback (no AbortController) ───
+// ─── Single-batch fetcher via Vercel proxy (no CORS issues) ───
 async function fetchSingleBatch(query: string, timeoutMs: number): Promise<OverpassResponse> {
-  let lastError: unknown = null;
+  try {
+    const fetchPromise = fetch(OVERPASS_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `data=${encodeURIComponent(query)}`,
+    });
 
-  for (const endpoint of OVERPASS_ENDPOINTS) {
-    try {
-      // Simple timeout via Promise.race — no AbortController needed
-      const fetchPromise = fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `data=${encodeURIComponent(query)}`,
-      });
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Timeout')), timeoutMs)
+    );
 
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Timeout')), timeoutMs)
-      );
+    const response = await Promise.race([fetchPromise, timeoutPromise]);
 
-      const response = await Promise.race([fetchPromise, timeoutPromise]);
-
-      if (!response.ok) throw new Error(`HTTP ${response.status} at ${endpoint}`);
-      return await response.json();
-    } catch (err: unknown) {
-      lastError = err;
-      // Always try the fallback endpoint on any error (timeout, network, HTTP, parse)
-      continue;
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status} from proxy`);
     }
-  }
 
-  throw lastError || new Error('All endpoints failed');
+    return await response.json();
+  } catch (err: unknown) {
+    // Re-throw whatever error occurred (timeout, network, HTTP)
+    throw err instanceof Error ? err : new Error(String(err));
+  }
 }
 
 // ─── Main fetch: SEQUENTIAL batches to avoid browser connection limit ───
