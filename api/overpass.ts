@@ -1,7 +1,7 @@
 // Vercel Serverless Function — proxies Overpass API requests to avoid CORS
 // The browser calls /api/overpass (same origin), and this function forwards to Overpass server-side.
 
-export async function POST({ request }: { request: Request }): Promise<Response> {
+export async function POST(request: Request): Promise<Response> {
   try {
     const body = await request.text();
 
