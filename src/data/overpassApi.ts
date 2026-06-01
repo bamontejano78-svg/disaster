@@ -632,13 +632,24 @@ interface OverpassResponse {
 }
 
 // ─── API Configuration ───
-const OVERPASS_ENDPOINT = '/api/overpass'; // Proxied through Vercel to avoid CORS
+const OVERPASS_ENDPOINTS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter'
+];
 const SEARCH_RADIUS = 1000; // meters
-const REQUEST_TIMEOUT = 12000; // ms (proxy adds some latency)
+const BATCH_SIZE = 15; // tag pairs per query (smaller = faster, less timeout risk)
+const REQUEST_TIMEOUT = 15000; // 15 seconds per batch
 const MIN_REAL_LOCATIONS = 5; // augment with simulated if fewer
 
-function buildQuery(lat: number, lng: number, radius: number): string {
-  const tagPairs = Object.keys(TAG_CATEGORY_MAP);
+function chunkArray<T>(arr: T[], size: number): T[][] {
+  const result: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    result.push(arr.slice(i, i + size));
+  }
+  return result;
+}
+
+function buildQueryForBatch(lat: number, lng: number, radius: number, tagPairs: string[]): string {
   const queries = tagPairs.map((pair) => {
     const [key, value] = pair.split('=');
     return `  node["${key}"="${value}"](around:${radius},${lat},${lng});`;
@@ -658,6 +669,45 @@ function getCacheKey(lat: number, lng: number): string {
   return `${rLat},${rLng}`;
 }
 
+// ─── API Fetcher with Fallback & Timeout ───
+async function fetchBatchWithRetry(query: string, timeoutMs: number): Promise<OverpassResponse> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  let lastError: unknown = null;
+
+  try {
+    for (const endpoint of OVERPASS_ENDPOINTS) {
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: `data=${encodeURIComponent(query)}`,
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error(`Overpass API HTTP error: ${response.status} at ${endpoint}`);
+        }
+
+        const data: OverpassResponse = await response.json();
+        return data;
+      } catch (err: unknown) {
+        lastError = err;
+        // If aborted (timed out), don't try fallback endpoints
+        if (err instanceof Error && err.name === 'AbortError') {
+          break;
+        }
+        // Otherwise (network error, rate limit, parse error), try the next fallback
+      }
+    }
+
+    throw lastError || new Error('All endpoints failed');
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 // ─── Main fetch function ───
 export async function fetchNearbyLocations(
   lat: number,
@@ -670,34 +720,39 @@ export async function fetchNearbyLocations(
     return cached.locations;
   }
 
-  const query = buildQuery(lat, lng, SEARCH_RADIUS);
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+  const allTagPairs = Object.keys(TAG_CATEGORY_MAP);
+  const batches = chunkArray(allTagPairs, BATCH_SIZE);
 
-  try {
-    const response = await fetch(OVERPASS_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: `data=${encodeURIComponent(query)}`,
-      signal: controller.signal,
-    });
+  // Map into concurrent requests
+  const batchPromises = batches.map(batch => {
+    const query = buildQueryForBatch(lat, lng, SEARCH_RADIUS, batch);
+    return fetchBatchWithRetry(query, REQUEST_TIMEOUT);
+  });
 
-    if (!response.ok) {
-      throw new Error(`Overpass API error: ${response.status}`);
+  // Await all batches (resolving fulfilled ones even if some fail)
+  const results = await Promise.allSettled(batchPromises);
+
+  const allElements: OsmElement[] = [];
+  for (const result of results) {
+    if (result.status === 'fulfilled') {
+      allElements.push(...result.value.elements);
+    } else {
+      console.warn('Overpass API Batch failed:', result.reason);
     }
-
-    const data: OverpassResponse = await response.json();
-    const locations = mapOsmToLocations(data.elements);
-
-    // Cache results
-    locationCache.set(cacheKey, { locations, timestamp: Date.now() });
-
-    return locations;
-  } finally {
-    clearTimeout(timeoutId);
   }
+
+  // If all batches failed entirely, return early so the Map can fallback to simulated data
+  if (allElements.length === 0) {
+    return [];
+  }
+
+  // Map and deduplicate (existing function deduplicates and caps result count at 15)
+  const locations = mapOsmToLocations(allElements);
+
+  // Cache final successful results
+  locationCache.set(cacheKey, { locations, timestamp: Date.now() });
+
+  return locations;
 }
 
 // ─── Map OSM elements to game locations ───
