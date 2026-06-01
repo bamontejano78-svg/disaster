@@ -633,8 +633,8 @@ interface OverpassResponse {
 
 // ─── API Configuration ───
 const OVERPASS_ENDPOINTS = [
-  'https://overpass-api.de/api/interpreter',
-  'https://overpass.kumi.systems/api/interpreter'
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass-api.de/api/interpreter'
 ];
 const SEARCH_RADIUS = 1000; // meters
 const BATCH_SIZE = 15; // tag pairs per query (smaller = faster, less timeout risk)

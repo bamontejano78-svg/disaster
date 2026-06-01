@@ -249,6 +249,7 @@ export default function GameMap() {
   const [recenterKey, setRecenterKey] = useState(0);
   const toastIdRef = useRef(0);
   const [dataSource, setDataSource] = useState<'osm' | 'simulated' | null>(null);
+  const [apiError, setApiError] = useState<string | null>(null);
   const [explorationEvent, setExplorationEvent] = useState<ExplorationEvent | null>(null);
   const [roamingEvent, setRoamingEvent] = useState<RoamingEvent | null>(null);
   const [encounter, setEncounter] = useState<NPCEncounter | null>(null);
@@ -339,6 +340,7 @@ export default function GameMap() {
       fetchNearbyLocations(state.playerLat, state.playerLng)
         .then((osmLocations) => {
           if (cancelled) return;
+          setApiError(null); // Clear any previous error on success
           const lat = state.playerLat!;
           const lng = state.playerLng!;
           if (osmLocations.length >= MIN_REAL_LOCATIONS) {
@@ -352,14 +354,18 @@ export default function GameMap() {
             setDataSource('osm');
           } else {
             // No real places found, fall back to simulated
+            setApiError('Sin ubicaciones cercanas');
             const simulated = generateNearbyLocations(lat, lng);
             setLocations(simulated);
             setDataSource('simulated');
           }
         })
-        .catch(() => {
+        .catch((err: unknown) => {
           if (cancelled) return;
           // API failed, fall back to simulated
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          console.error('Overpass API error:', errorMsg);
+          setApiError(errorMsg);
           const simulated = generateNearbyLocations(
             state.playerLat!,
             state.playerLng!
@@ -586,8 +592,9 @@ export default function GameMap() {
                 ? 'glass-card border-emerald-500/30 text-emerald-300'
                 : 'glass-card border-amber-500/30 text-amber-300'
             }`}
+            title={apiError || undefined}
           >
-            {dataSource === 'osm' ? '📍 OSM real' : '🎲 Simulado'}
+            {dataSource === 'osm' ? '📍 OSM real' : `🎲 Simulado${apiError ? ': ' + apiError : ''}`}
           </div>
         )}
 
