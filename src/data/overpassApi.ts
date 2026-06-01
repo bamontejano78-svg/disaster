@@ -117,15 +117,105 @@ const TAG_CATEGORY_MAP: Record<string, OsmCategory> = {
     maxPerDay: 2,
   },
 
-  // ─── Parques ───
+  // ─── Parques y zonas verdes ───
   'leisure=park': {
     type: 'park',
     icon: '🌳',
     resources: { water: 8, food: 5 },
-    description: 'Fuente de agua y posible fuente de alimentos.',
+    description: 'Parque público con fuentes y posible fuente de alimentos.',
     maxPerDay: 2,
   },
-
+  'leisure=garden': {
+    type: 'park',
+    icon: '🌺',
+    resources: { water: 6, food: 8 },
+    description: 'Jardín con plantas comestibles, hierbas y fuente de agua.',
+    maxPerDay: 2,
+  },
+  'leisure=nature_reserve': {
+    type: 'park',
+    icon: '🏞️',
+    resources: { water: 10, food: 8, materials: 5 },
+    description: 'Reserva natural con arroyos, frutos silvestres y madera.',
+    maxPerDay: 2,
+  },
+  'leisure=playground': {
+    type: 'park',
+    icon: '🛝',
+    resources: { water: 4, materials: 6 },
+    description: 'Parque infantil con fuente y estructuras metálicas aprovechables.',
+    maxPerDay: 2,
+  },
+  'landuse=recreation_ground': {
+    type: 'park',
+    icon: '⚽',
+    resources: { water: 5, food: 3 },
+    description: 'Zona recreativa al aire libre con fuentes y merenderos.',
+    maxPerDay: 2,
+  },
+  'landuse=grass': {
+    type: 'park',
+    icon: '🌿',
+    resources: { water: 3, food: 5 },
+    description: 'Pradera urbana con plantas silvestres comestibles.',
+    maxPerDay: 2,
+  },
+  'leisure=dog_park': {
+    type: 'park',
+    icon: '🐕',
+    resources: { water: 4, food: 2 },
+    description: 'Pipicán con fuente de agua para mascotas.',
+    maxPerDay: 2,
+  },
+  'natural=wood': {
+    type: 'park',
+    icon: '🌲',
+    resources: { water: 6, food: 8, materials: 8 },
+    description: 'Bosque urbano con arroyos, setas, leña y frutos.',
+    maxPerDay: 2,
+  },
+  'landuse=forest': {
+    type: 'park',
+    icon: '🌲',
+    resources: { water: 5, food: 7, materials: 10 },
+    description: 'Zona forestal con madera, setas y posibles fuentes.',
+    maxPerDay: 2,
+  },
+  'landuse=orchard': {
+    type: 'park',
+    icon: '🍎',
+    resources: { food: 12, water: 4 },
+    description: 'Huerto de frutales con manzanas, peras y sistema de riego.',
+    maxPerDay: 2,
+  },
+  'landuse=vineyard': {
+    type: 'park',
+    icon: '🍇',
+    resources: { food: 10, water: 6 },
+    description: 'Viñedo con uvas, agua de riego y posibles herramientas.',
+    maxPerDay: 2,
+  },
+  'landuse=allotments': {
+    type: 'park',
+    icon: '🥕',
+    resources: { food: 12, water: 5, materials: 3 },
+    description: 'Huertos urbanos con verduras, agua y herramientas.',
+    maxPerDay: 2,
+  },
+  'leisure=picnic_table': {
+    type: 'park',
+    icon: '🧺',
+    resources: { food: 4, water: 3 },
+    description: 'Área de picnic con mesas y posible fuente cercana.',
+    maxPerDay: 3,
+  },
+  'tourism=picnic_site': {
+    type: 'park',
+    icon: '🧺',
+    resources: { food: 6, water: 5 },
+    description: 'Zona de picnic con mesas, barbacoas y fuente.',
+    maxPerDay: 2,
+  },
   // ─── Hospitales ───
   'amenity=hospital': {
     type: 'hospital',
@@ -616,6 +706,98 @@ const TAG_CATEGORY_MAP: Record<string, OsmCategory> = {
     description: 'Centro de jardinería con plantas, herramientas y tierra.',
     maxPerDay: 1,
   },
+
+  // ─── Mercados y plazas ───
+  'amenity=marketplace': {
+    type: 'supermarket',
+    icon: '🏪',
+    resources: { food: 10, water: 6, materials: 4 },
+    description: 'Mercado con puestos de comida, bebida y artesanía.',
+    maxPerDay: 1,
+  },
+  'shop=mall': {
+    type: 'supermarket',
+    icon: '🏬',
+    resources: { food: 15, water: 10, materials: 8 },
+    description: 'Centro comercial con supermercado, tiendas y fuentes.',
+    maxPerDay: 1,
+  },
+
+  // ─── Campings y refugios al aire libre ───
+  'tourism=camp_site': {
+    type: 'shelter',
+    icon: '🏕️',
+    resources: { food: 10, water: 8, materials: 5 },
+    description: 'Camping con tiendas, agua potable y zona de cocina.',
+    maxPerDay: 1,
+  },
+  'tourism=caravan_site': {
+    type: 'shelter',
+    icon: '🚐',
+    resources: { food: 8, water: 8, fuel: 5 },
+    description: 'Área de autocaravanas con agua, electricidad y gas.',
+    maxPerDay: 1,
+  },
+  'tourism=wilderness_hut': {
+    type: 'shelter',
+    icon: '🛖',
+    resources: { food: 15, water: 10, materials: 8 },
+    description: 'Refugio de montaña con provisiones y chimenea.',
+    maxPerDay: 1,
+  },
+
+  // ─── Edificios gubernamentales ───
+  'amenity=townhall': {
+    type: 'shelter',
+    icon: '🏛️',
+    resources: { food: 10, water: 8, materials: 12 },
+    description: 'Ayuntamiento con suministros de emergencia y sótano seguro.',
+    maxPerDay: 1,
+  },
+  'amenity=courthouse': {
+    type: 'bank',
+    icon: '⚖️',
+    resources: { materials: 15, food: 5 },
+    description: 'Juzgado con archivos, mobiliario y pequeña cafetería.',
+    maxPerDay: 1,
+  },
+
+  // ─── Mobiliario urbano (ayuda a encontrar parques y plazas) ───
+  'amenity=bench': {
+    type: 'park',
+    icon: '🪑',
+    resources: { materials: 3 },
+    description: 'Banco público en parque o plaza. Indica zona verde cercana.',
+    maxPerDay: 3,
+  },
+  'amenity=fountain': {
+    type: 'park',
+    icon: '⛲',
+    resources: { water: 10 },
+    description: 'Fuente pública con agua potable. ¡Un hallazgo valioso!',
+    maxPerDay: 3,
+  },
+  'amenity=drinking_water': {
+    type: 'park',
+    icon: '🚰',
+    resources: { water: 8 },
+    description: 'Punto de agua potable público.',
+    maxPerDay: 3,
+  },
+  'amenity=waste_basket': {
+    type: 'park',
+    icon: '🗑️',
+    resources: { materials: 2, food: 1 },
+    description: 'Papelera pública con posibles objetos aprovechables.',
+    maxPerDay: 5,
+  },
+  'amenity=bbq': {
+    type: 'park',
+    icon: '🔥',
+    resources: { food: 3, materials: 4 },
+    description: 'Barbacoa pública con leña y restos aprovechables.',
+    maxPerDay: 3,
+  },
 };
 
 // ─── Overpass API Types ───
@@ -636,7 +818,7 @@ const OVERPASS_ENDPOINTS = [
   'https://overpass.kumi.systems/api/interpreter',
   'https://overpass-api.de/api/interpreter'
 ];
-const SEARCH_RADIUS = 1000; // meters
+const SEARCH_RADIUS = 2000; // meters (increased for more locations)
 const BATCH_SIZE = 15; // tag pairs per query (smaller = faster, less timeout risk)
 const REQUEST_TIMEOUT = 15000; // 15 seconds per batch
 const MIN_REAL_LOCATIONS = 5; // augment with simulated if fewer
@@ -771,7 +953,7 @@ function mapOsmToLocations(elements: OsmElement[]): ResourceLocation[] {
     const name =
       el.tags?.name ??
       category.type;
-    const dedupKey = `${name}-${category.type}`;
+    const dedupKey = `${el.tags?.name ?? el.id}-${category.type}`;
     if (seen.has(dedupKey)) continue;
     seen.add(dedupKey);
 
