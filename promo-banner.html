@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Seven Days for Disaster - Promo</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    width: 1200px;
+    height: 630px;
+    overflow: hidden;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: #0a0a12;
+    position: relative;
+  }
+
+  /* ─── Background ─── */
+  .bg {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse at 20% 50%, rgba(220, 38, 38, 0.12) 0%, transparent 60%),
+      radial-gradient(ellipse at 80% 30%, rgba(6, 182, 212, 0.08) 0%, transparent 50%),
+      radial-gradient(ellipse at 60% 80%, rgba(234, 179, 8, 0.06) 0%, transparent 50%),
+      linear-gradient(180deg, #0a0a1a 0%, #0f0f23 30%, #0a0a1a 70%, #0d0d1f 100%);
+  }
+
+  /* Grid overlay */
+  .grid {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+    background-size: 40px 40px;
+    mask-image: radial-gradient(ellipse at center, black 40%, transparent 70%);
+  }
+
+  /* Map-like curved lines */
+  .map-lines {
+    position: absolute;
+    inset: 0;
+    opacity: 0.06;
+  }
+  .map-lines svg { width: 100%; height: 100%; }
+
+  /* Scanline */
+  .scanline {
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.15) 2px,
+      rgba(0,0,0,0.15) 4px
+    );
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  /* Vignette */
+  .vignette {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.6) 100%);
+    pointer-events: none;
+    z-index: 9;
+  }
+
+  /* ─── Content ─── */
+  .content {
+    position: relative;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    padding: 40px 60px;
+  }
+
+  /* Hazard stripes top */
+  .hazard-stripes {
+    display: flex;
+    gap: 2px;
+    margin-bottom: 10px;
+    opacity: 0.7;
+  }
+  .hazard-stripes span {
+    width: 18px;
+    height: 3px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, #ef4444, #f97316);
+    transform-origin: center;
+  }
+  .hazard-stripes span:nth-child(1) { transform: rotate(-8deg); }
+  .hazard-stripes span:nth-child(2) { transform: rotate(-4deg); }
+  .hazard-stripes span:nth-child(3) { transform: rotate(0deg); }
+  .hazard-stripes span:nth-child(4) { transform: rotate(4deg); }
+  .hazard-stripes span:nth-child(5) { transform: rotate(8deg); }
+
+  /* Subtitle */
+  .subtitle {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5em;
+    color: rgba(239, 68, 68, 0.7);
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  /* Title */
+  .title-block {
+    text-align: center;
+    margin-bottom: 10px;
+    position: relative;
+  }
+  .title-glow {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 500px; height: 120px;
+    background: radial-gradient(ellipse, rgba(239,68,68,0.2) 0%, transparent 70%);
+    filter: blur(40px);
+    animation: glowPulse 3s ease-in-out infinite;
+  }
+  @keyframes glowPulse {
+    0%, 100% { opacity: 0.6; transform: translate(-50%, -50%) scale(1); }
+    50% { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
+  }
+  .title {
+    font-size: 72px;
+    font-weight: 900;
+    line-height: 1;
+    letter-spacing: -2px;
+    position: relative;
+    z-index: 2;
+  }
+  .title .seven {
+    background: linear-gradient(135deg, #ef4444 0%, #f97316 30%, #ef4444 60%, #dc2626 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    filter: drop-shadow(0 0 30px rgba(239,68,68,0.4));
+  }
+  .title .for {
+    font-size: 24px;
+    font-weight: 300;
+    color: rgba(255,255,255,0.4);
+    letter-spacing: 0.25em;
+    display: block;
+    margin: 4px 0;
+  }
+  .title .disaster {
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 50%, #f97316 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    filter: drop-shadow(0 0 30px rgba(239,68,68,0.4));
+  }
+
+  /* Decorative line */
+  .deco-line {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+  .deco-line .wing {
+    width: 60px; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(239,68,68,0.4), transparent);
+  }
+  .deco-line .dot {
+    width: 5px; height: 5px;
+    background: rgba(239,68,68,0.7);
+    border-radius: 50%;
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 0.4; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.6); }
+  }
+
+  /* Features */
+  .features {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  .feature {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 16px;
+    padding: 14px 20px;
+    text-align: center;
+    backdrop-filter: blur(10px);
+    transition: all 0.3s ease;
+    min-width: 160px;
+  }
+  .feature:hover {
+    border-color: rgba(239,68,68,0.3);
+    background: rgba(239,68,68,0.05);
+  }
+  .feature .icon {
+    font-size: 28px;
+    margin-bottom: 6px;
+  }
+  .feature .label {
+    font-size: 11px;
+    color: rgba(255,255,255,0.5);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 600;
+  }
+
+  /* Countdown bar */
+  .countdown {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: rgba(0,0,0,0.4);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 20px;
+    padding: 10px 24px;
+    margin-bottom: 16px;
+    backdrop-filter: blur(10px);
+  }
+  .countdown .days {
+    font-size: 36px;
+    font-weight: 900;
+    color: #ef4444;
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 20px rgba(239,68,68,0.5);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  .countdown .label-sm {
+    font-size: 11px;
+    color: rgba(255,255,255,0.4);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+  .countdown .progress-bar {
+    flex: 1;
+    height: 4px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .countdown .progress-fill {
+    height: 100%;
+    width: 42%;
+    background: linear-gradient(90deg, #ef4444, #f97316);
+    border-radius: 4px;
+    animation: progressPulse 2s ease-in-out infinite;
+  }
+  @keyframes progressPulse {
+    0%, 100% { opacity: 0.8; }
+    50% { opacity: 1; }
+  }
+
+  /* Bottom bar */
+  .bottom-bar {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    font-size: 12px;
+    color: rgba(255,255,255,0.3);
+    letter-spacing: 0.08em;
+  }
+  .bottom-bar .url {
+    color: rgba(6,182,212,0.6);
+    font-weight: 600;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+  }
+  .bottom-bar .tag {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 20px;
+    padding: 4px 12px;
+    font-size: 10px;
+  }
+
+  /* Corner accents */
+  .corner {
+    position: absolute;
+    z-index: 25;
+    pointer-events: none;
+  }
+  .corner-tl { top: 20px; left: 20px; }
+  .corner-tr { top: 20px; right: 20px; }
+  .corner-bl { bottom: 20px; left: 20px; }
+  .corner-br { bottom: 20px; right: 20px; }
+  .corner svg { opacity: 0.2; }
+
+  /* Floating particles */
+  .particles {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 8;
+    overflow: hidden;
+  }
+  .particle {
+    position: absolute;
+    width: 2px; height: 2px;
+    background: rgba(239,68,68,0.4);
+    border-radius: 50%;
+    animation: floatUp 8s linear infinite;
+  }
+  @keyframes floatUp {
+    0% { transform: translateY(0) translateX(0); opacity: 0; }
+    10% { opacity: 1; }
+    90% { opacity: 0.5; }
+    100% { transform: translateY(-700px) translateX(40px); opacity: 0; }
+  }
+
+  /* Compass rose */
+  .compass {
+    position: absolute;
+    top: 30px;
+    right: 50px;
+    z-index: 25;
+    opacity: 0.15;
+    pointer-events: none;
+  }
+  .compass svg {
+    animation: compassSpin 60s linear infinite;
+  }
+  @keyframes compassSpin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+</style>
+</head>
+<body>
+
+  <!-- Background layers -->
+  <div class="bg"></div>
+  <div class="grid"></div>
+
+  <!-- Map lines -->
+  <div class="map-lines">
+    <svg viewBox="0 0 1200 630">
+      <path d="M0,200 Q200,180 400,250 T800,200 T1200,300" fill="none" stroke="white" stroke-width="1"/>
+      <path d="M0,350 Q300,380 500,320 T900,370 T1200,350" fill="none" stroke="white" stroke-width="0.5"/>
+      <path d="M100,0 Q120,200 150,400 T200,630" fill="none" stroke="white" stroke-width="0.5"/>
+      <path d="M500,0 Q480,300 520,500 T550,630" fill="none" stroke="white" stroke-width="0.5"/>
+      <circle cx="300" cy="250" r="3" fill="white" opacity="0.4"/>
+      <circle cx="600" cy="400" r="4" fill="white" opacity="0.3"/>
+      <circle cx="850" cy="200" r="2.5" fill="white" opacity="0.35"/>
+      <circle cx="450" cy="500" r="3.5" fill="white" opacity="0.25"/>
+    </svg>
+  </div>
+
+  <!-- Compass -->
+  <div class="compass">
+    <svg width="80" height="80" viewBox="0 0 80 80">
+      <circle cx="40" cy="40" r="38" fill="none" stroke="white" stroke-width="1"/>
+      <polygon points="40,8 46,38 40,72 34,38" fill="white"/>
+      <polygon points="40,8 34,38 40,72 46,38" fill="none" stroke="white" stroke-width="0.5"/>
+    </svg>
+  </div>
+
+  <!-- Scanline -->
+  <div class="scanline"></div>
+  <div class="vignette"></div>
+
+  <!-- Particles -->
+  <div class="particles">
+    <div class="particle" style="left:10%; animation-delay:0s; animation-duration:7s;"></div>
+    <div class="particle" style="left:25%; animation-delay:1.5s; animation-duration:8s;"></div>
+    <div class="particle" style="left:40%; animation-delay:3s; animation-duration:6.5s;"></div>
+    <div class="particle" style="left:55%; animation-delay:0.8s; animation-duration:9s;"></div>
+    <div class="particle" style="left:70%; animation-delay:2.2s; animation-duration:7.5s;"></div>
+    <div class="particle" style="left:85%; animation-delay:4s; animation-duration:8.5s;"></div>
+    <div class="particle" style="left:15%; animation-delay:5s; animation-duration:7s;"></div>
+    <div class="particle" style="left:60%; animation-delay:3.5s; animation-duration:8s;"></div>
+  </div>
+
+  <!-- Corners -->
+  <div class="corner corner-tl">
+    <svg width="40" height="40"><path d="M0,15 L0,0 L15,0" fill="none" stroke="rgba(239,68,68,0.4)" stroke-width="1.5"/></svg>
+  </div>
+  <div class="corner corner-tr">
+    <svg width="40" height="40"><path d="M25,0 L40,0 L40,15" fill="none" stroke="rgba(239,68,68,0.4)" stroke-width="1.5"/></svg>
+  </div>
+  <div class="corner corner-bl">
+    <svg width="40" height="40"><path d="M0,25 L0,40 L15,40" fill="none" stroke="rgba(239,68,68,0.4)" stroke-width="1.5"/></svg>
+  </div>
+  <div class="corner corner-br">
+    <svg width="40" height="40"><path d="M25,40 L40,40 L40,25" fill="none" stroke="rgba(239,68,68,0.4)" stroke-width="1.5"/></svg>
+  </div>
+
+  <!-- Main content -->
+  <div class="content">
+
+    <!-- Hazard stripes -->
+    <div class="hazard-stripes">
+      <span></span><span></span><span></span><span></span><span></span>
+    </div>
+
+    <!-- Subtitle -->
+    <div class="subtitle">Un juego de supervivencia</div>
+
+    <!-- Title -->
+    <div class="title-block">
+      <div class="title-glow"></div>
+      <div class="title">
+        <span class="seven">SEVEN</span>
+        <span class="for">DAYS FOR</span>
+        <span class="disaster">DISASTER</span>
+      </div>
+    </div>
+
+    <!-- Decorative line -->
+    <div class="deco-line">
+      <div class="wing"></div>
+      <div class="dot"></div>
+      <div class="wing"></div>
+    </div>
+
+    <!-- Features -->
+    <div class="features">
+      <div class="feature">
+        <div class="icon">🗺️</div>
+        <div class="label">Mapa real</div>
+      </div>
+      <div class="feature">
+        <div class="icon">🎒</div>
+        <div class="label">Recolecta</div>
+      </div>
+      <div class="feature">
+        <div class="icon">🤝</div>
+        <div class="label">Alianzas</div>
+      </div>
+      <div class="feature">
+        <div class="icon">⚠️</div>
+        <div class="label">Sobrevive</div>
+      </div>
+    </div>
+
+    <!-- Countdown -->
+    <div class="countdown">
+      <div>
+        <div class="days">7</div>
+        <div class="label-sm">días</div>
+      </div>
+      <div style="text-align:center;">
+        <div style="font-size:10px;color:rgba(255,255,255,0.3);letter-spacing:0.1em;">HASTA EL</div>
+        <div style="font-size:13px;color:#f97316;font-weight:700;">DESASTRE</div>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill"></div>
+      </div>
+      <div style="font-size:28px;">💀</div>
+    </div>
+
+    <!-- Bottom -->
+    <div class="bottom-bar">
+      <span>🌍 Explora tu ciudad</span>
+      <span>·</span>
+      <span class="url">disaster-pink.vercel.app</span>
+      <span>·</span>
+      <span class="tag">GPS</span>
+      <span class="tag">FREE</span>
+      <span class="tag">WEB</span>
+    </div>
+
+  </div>
+
+</body>
+</html>

@@ -931,8 +931,13 @@ export async function fetchNearbyLocations(
   // Map and deduplicate (existing function deduplicates and caps result count at 15)
   const locations = mapOsmToLocations(allElements);
 
-  // Cache final successful results
-  locationCache.set(cacheKey, { locations, timestamp: Date.now() });
+  // Only cache results that actually found locations.
+  // Empty results are NOT cached so that when the GPS accuracy improves
+  // (common on mobile: first fix is imprecise, second is accurate),
+  // a re-fetch won't be short-circuited by a stale empty cache.
+  if (locations.length > 0) {
+    locationCache.set(cacheKey, { locations, timestamp: Date.now() });
+  }
 
   return locations;
 }

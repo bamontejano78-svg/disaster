@@ -250,6 +250,7 @@ export default function GameMap() {
   const toastIdRef = useRef(0);
   const [dataSource, setDataSource] = useState<'osm' | 'simulated' | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
+  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [explorationEvent, setExplorationEvent] = useState<ExplorationEvent | null>(null);
   const [roamingEvent, setRoamingEvent] = useState<RoamingEvent | null>(null);
   const [encounter, setEncounter] = useState<NPCEncounter | null>(null);
@@ -320,7 +321,7 @@ export default function GameMap() {
       {
         enableHighAccuracy: true,
         maximumAge: 10000,
-        timeout: 15000,
+        timeout: 30000, // 30s — mobile GPS puede tardar más en obtener precisión alta
       }
     );
 
@@ -337,48 +338,63 @@ export default function GameMap() {
       let cancelled = false;
       setLoadingLocations(true);
 
-      fetchNearbyLocations(state.playerLat, state.playerLng)
-        .then((osmLocations) => {
-          if (cancelled) return;
-          setApiError(null); // Clear any previous error on success
-          const lat = state.playerLat!;
-          const lng = state.playerLng!;
-          if (osmLocations.length >= MIN_REAL_LOCATIONS) {
-            setLocations(osmLocations);
-            setDataSource('osm');
-          } else if (osmLocations.length > 0) {
-            // Some real places, augment with simulated
-            const simulated = generateNearbyLocations(lat, lng);
-            const augmented = [...osmLocations, ...simulated.slice(0, 10 - osmLocations.length)];
-            setLocations(augmented);
-            setDataSource('osm');
-          } else {
-            // No real places found, fall back to simulated
-            setApiError('Sin ubicaciones cercanas');
-            const simulated = generateNearbyLocations(lat, lng);
+      const doFetch = (lat: number, lng: number, isRetry: boolean) => {
+        fetchNearbyLocations(lat, lng)
+          .then((osmLocations) => {
+            if (cancelled) return;
+            setApiError(null);
+            if (osmLocations.length >= MIN_REAL_LOCATIONS) {
+              setLocations(osmLocations);
+              setDataSource('osm');
+              setLoadingLocations(false);
+            } else if (osmLocations.length > 0) {
+              const simulated = generateNearbyLocations(lat, lng);
+              const augmented = [...osmLocations, ...simulated.slice(0, 10 - osmLocations.length)];
+              setLocations(augmented);
+              setDataSource('osm');
+              setLoadingLocations(false);
+            } else if (!isRetry) {
+              // No results on first try — mobile GPS may still be warming up.
+              // Wait 6s and retry with potentially improved coordinates.
+              setApiError('Refinando ubicación GPS...');
+              setDataSource('simulated'); // Show badge so user sees the "refining" message
+              retryTimeoutRef.current = setTimeout(() => {
+                retryTimeoutRef.current = null;
+                if (cancelled) return;
+                doFetch(state.playerLat!, state.playerLng!, true);
+              }, 6000);
+            } else {
+              // Retry also returned 0 — truly no OSM data in this area
+              setApiError('Zona sin datos OSM');
+              const simulated = generateNearbyLocations(lat, lng);
+              setLocations(simulated);
+              setDataSource('simulated');
+              setLoadingLocations(false);
+            }
+          })
+          .catch((err: unknown) => {
+            if (cancelled) return;
+            const errorMsg = err instanceof Error ? err.message : String(err);
+            console.error('Overpass API error:', errorMsg);
+            setApiError(errorMsg);
+            const simulated = generateNearbyLocations(
+              state.playerLat!,
+              state.playerLng!
+            );
             setLocations(simulated);
             setDataSource('simulated');
-          }
-        })
-        .catch((err: unknown) => {
-          if (cancelled) return;
-          // API failed, fall back to simulated
-          const errorMsg = err instanceof Error ? err.message : String(err);
-          console.error('Overpass API error:', errorMsg);
-          setApiError(errorMsg);
-          const simulated = generateNearbyLocations(
-            state.playerLat!,
-            state.playerLng!
-          );
-          setLocations(simulated);
-          setDataSource('simulated');
-        })
-        .finally(() => {
-          if (!cancelled) setLoadingLocations(false);
-        });
+            setLoadingLocations(false);
+          });
+      };
+
+      doFetch(state.playerLat, state.playerLng, false);
 
       return () => {
         cancelled = true;
+        if (retryTimeoutRef.current) {
+          clearTimeout(retryTimeoutRef.current);
+          retryTimeoutRef.current = null;
+        }
       };
     }
   }, [state.playerLat, state.playerLng, state.week]);
