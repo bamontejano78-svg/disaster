@@ -115,6 +115,14 @@ export interface ResourceLocation {
   rarity?: 'common' | 'rare' | 'legendary';
 }
 
+// ─── Tensiones entre facciones ───
+export interface FactionTension {
+  id: string;
+  factionA: FactionId;
+  factionB: FactionId;
+  weekStarted: number;
+}
+
 // ─── Estado del Juego ───
 export type GamePhase =
   | 'playing'
@@ -155,6 +163,15 @@ export interface GameState {
   metNPCs: string[]; // ids de NPCs ya encontrados
   factionAlliance: FactionId | null; // facción a la que el jugador ha jurado lealtad
   factionAllianceWeek: number; // semana en la que se formó la alianza
+  // ─── Nuevos campos de mejoras ───
+  craftedToday: boolean;
+  energyMax: number;
+  energyCurrent: number;
+  injuredUntilDay: number | null;
+  shelterDamaged: boolean;
+  depletedLocationIds: string[];
+  weakenedLocationTypes: string[];
+  activeFactionTensions: FactionTension[];
 }
 
 export interface DailyEvent {
@@ -180,6 +197,7 @@ export interface SurvivalRecord {
   survived: boolean;
   resourcesBefore: Resources;
   resourcesAfter: Resources;
+  outcome?: 'clean' | 'damaged' | 'injured' | 'both' | 'failed';
 }
 
 // ─── Refugio ───
@@ -359,6 +377,8 @@ export interface JournalEntry {
   text: string;
   icon: string;
   type: 'encounter' | 'decision' | 'milestone' | 'disaster' | 'community';
+  encounterId?: string;
+  chosenOptionIndex?: number;
 }
 
 // ─── Misiones ───
@@ -455,4 +475,6 @@ export type GameAction =
   | { type: 'ADD_MET_NPC'; npcId: string }
   | { type: 'UPDATE_COMPANION_WEEKS' }
   | { type: 'ALLY_WITH_FACTION'; factionId: FactionId }
-  | { type: 'BREAK_ALLIANCE' };
+  | { type: 'BREAK_ALLIANCE' }
+  | { type: 'USE_ENERGY'; amount: number }
+  | { type: 'RESTORE_ENERGY'; amount: number };

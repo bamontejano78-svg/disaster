@@ -20,7 +20,6 @@ function formatTimeRemaining(ms: number): string {
 export default function HUD() {
   const { state, endDay, dispatch } = useGame();
   const { resources, day, week, phase, dailyEvent, dayStartTime, predictedDisaster, currentWeather, karma } = state;
-
   const [remainingMs, setRemainingMs] = useState(() => {
     if (phase !== 'playing') return 0;
     return Math.max(0, DAY_DURATION_MS - (Date.now() - dayStartTime));
@@ -209,7 +208,32 @@ export default function HUD() {
                   : '¡El agua se está agotando! Te quedan pocos días.'}
             </span>
           </div>
-        )}          {/* ─── Alliance badge ─── */}
+        )}
+
+        {/* Injury banner */}
+        {isDaytime && state.injuredUntilDay !== null && state.day <= state.injuredUntilDay && (
+          <div className="mx-3 mb-1.5 px-4 py-3 rounded-2xl glass-card border-orange-500/30 flex items-center gap-3 animate-slide-up text-xs">
+            <div className="w-10 h-10 rounded-xl bg-orange-500/10 flex items-center justify-center text-lg shrink-0">
+              🩹
+            </div>
+            <span className="flex-1 text-orange-200 leading-relaxed">
+              Estás herido. Energía reducida hasta el día {state.injuredUntilDay}.
+            </span>
+          </div>
+        )}
+
+        {/* Rumor hint banners */}
+        {isDaytime && state.activeRumors.filter(r => r.type === 'disaster_hint').map(rumor => (
+          <div key={rumor.id} className="mx-3 mb-1.5 px-4 py-3 rounded-2xl glass-card border-blue-500/30 flex items-center gap-3 animate-slide-up text-xs text-blue-200">
+            <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-lg shrink-0">
+              🔍
+            </div>
+            <span className="flex-1 italic leading-relaxed">"{rumor.text}"</span>
+            <span className="text-[10px] text-blue-400 font-mono whitespace-nowrap bg-blue-500/10 px-2 py-1 rounded-lg">
+              Rumor
+            </span>
+          </div>
+        ))}          {/* ─── Alliance badge ─── */}
           {allianceFaction && alliancePerk && (
             <div className="mx-3 mb-1.5 px-4 py-3 rounded-2xl glass-card border-white/10 flex items-center gap-3 animate-slide-up text-xs">
               <div
@@ -268,7 +292,7 @@ export default function HUD() {
           </div>
 
           {/* Karma indicator */}
-          <div className="flex items-center gap-1.5 px-3 py-2 bg-white/5 rounded-xl border border-white/10 shrink-0">
+          <div className="flex items-center gap-1.5 px-3 py-2 bg-white/5 rounded-xl border border-white/10 shrink-0 relative group">
             <span className="text-lg">
               {karma >= 5 ? '😇' : karma >= 2 ? '🙂' : karma >= -2 ? '😐' : karma >= -5 ? '😠' : '👿'}
             </span>
@@ -295,6 +319,14 @@ export default function HUD() {
                   }}
                 />
               </div>
+            </div>
+            {/* Karma tooltip */}
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 glass-card rounded-xl px-3 py-2 text-[10px] text-white/70 leading-relaxed opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-200 z-10 border border-white/10">
+              {karma >= 8 ? '😇 Los supervivientes confían en ti plenamente. Encuentros exclusivos disponibles.' :
+               karma >= 5 ? '🙂 Tu reputación te abre puertas. +15% eventos positivos.' :
+               karma >= -4 ? '😐 Neutro. Sin efectos especiales.' :
+               karma >= -5 ? '😠 La gente desconfía de ti. Algunos NPCs te rechazan.' :
+               '👿 Los forajidos te respetan, los demás te temen. Encuentros hostiles más frecuentes.'}
             </div>
           </div>
 

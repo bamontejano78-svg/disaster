@@ -624,7 +624,8 @@ export function generateExplorationEvent(
 
 export function generateExplorationEventWithBonus(
   locationType: string,
-  rarity?: string
+  rarity?: string,
+  karma?: number
 ): ExplorationEvent | null {
   const eligible = EXPLORATION_EVENTS.filter((ev) => {
     if (ev.locationTypes && ev.locationTypes.length > 0) {
@@ -639,11 +640,14 @@ export function generateExplorationEventWithBonus(
   if (eligible.length === 0) return null;
 
   // Higher rarity gives a probability bonus
-  const bonus = rarity === 'legendary' ? 0.2 : rarity === 'rare' ? 0.1 : 0;
+  const rarityBonus = rarity === 'legendary' ? 0.2 : rarity === 'rare' ? 0.1 : 0;
+  // Karma alto (+5 o más) da +15% de probabilidad a eventos positivos
+  const karmaBonus = (karma !== undefined && karma >= 5) ? 0.15 : 0;
 
   for (const ev of eligible) {
     const roll = Math.random();
-    if (roll < ev.probability + bonus) return ev;
+    const positiveBonus = (ev.type === 'positive' || ev.type === 'discovery') ? karmaBonus : 0;
+    if (roll < ev.probability + rarityBonus + positiveBonus) return ev;
   }
 
   return null;

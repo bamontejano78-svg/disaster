@@ -21,6 +21,7 @@ import type {
 import {
   getRandomDisaster,
   calculateDisasterDifficulty,
+  getWeakenedTypesByDisaster,
   DISASTERS,
 } from '../data/disasters';
 import {
@@ -261,6 +262,14 @@ function buildInitialState(): GameState {
       metNPCs: (savedData as any).metNPCs ?? [],
       factionAlliance: (savedData as any).factionAlliance ?? null,
       factionAllianceWeek: (savedData as any).factionAllianceWeek ?? 0,
+      craftedToday: (savedData as any).craftedToday ?? false,
+      energyMax: (savedData as any).energyMax ?? 5,
+      energyCurrent: (savedData as any).energyCurrent ?? 5,
+      injuredUntilDay: (savedData as any).injuredUntilDay ?? null,
+      shelterDamaged: (savedData as any).shelterDamaged ?? false,
+      depletedLocationIds: (savedData as any).depletedLocationIds ?? [],
+      weakenedLocationTypes: (savedData as any).weakenedLocationTypes ?? [],
+      activeFactionTensions: (savedData as any).activeFactionTensions ?? [],
     };
 
     return advanceByElapsedTime(restored);
@@ -340,6 +349,14 @@ function buildInitialState(): GameState {
     metNPCs: [],
     factionAlliance: null,
     factionAllianceWeek: 0,
+    craftedToday: false,
+    energyMax: 5,
+    energyCurrent: 5,
+    injuredUntilDay: null,
+    shelterDamaged: false,
+    depletedLocationIds: [],
+    weakenedLocationTypes: [],
+    activeFactionTensions: [],
   };
 }
 
@@ -355,10 +372,14 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       for (const [key, value] of Object.entries(action.resources)) {
         newResources[key as ResourceType] += value;
       }
+      // Consume 1 energy for real location visits (not events/roaming)
+      const isRealVisit = !action.locationId.startsWith('roaming_') && !action.locationId.startsWith('event_') && !action.locationId.startsWith('npc_');
+      const newEnergy = isRealVisit ? Math.max(0, state.energyCurrent - 1) : state.energyCurrent;
       const updated: GameState = {
         ...state,
         resources: newResources,
         visitedLocations: [...state.visitedLocations, action.locationId],
+        energyCurrent: newEnergy,
       };
       const newAch = checkAchievements(updated);
       if (newAch.length > 0) {
@@ -436,6 +457,12 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         }
       }
 
+      // Calcular energía máxima (base 5, reducida si herido)
+      const isInjured = state.injuredUntilDay !== null && nextDay <= state.injuredUntilDay;
+      const newEnergyMax = isInjured ? Math.max(1, state.energyMax - 2) : state.energyMax;
+      // Limpiar lesión si ya pasó
+      const newInjuredUntilDay = (state.injuredUntilDay !== null && nextDay > state.injuredUntilDay) ? null : state.injuredUntilDay;
+
       const updated: GameState = {
         ...state,
         day: nextDay,
@@ -447,6 +474,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         currentWeather: getAdjustedWeather(state.week, nextDay).type,
         activeMissions: state.activeMissions.filter((m) => !socialCompleted.includes(m)),
         completedMissions: [...state.completedMissions, ...socialCompleted],
+        craftedToday: false,
+        energyMax: newEnergyMax,
+        energyCurrent: newEnergyMax,
+        injuredUntilDay: newInjuredUntilDay,
       };
 
       const newAch = checkAchievements(updated);
@@ -490,12 +521,50 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             newResources[key as ResourceType] - value
           );
         }
+
+        // Calcular outcome intermedio basado en ratio de recursos
+        const disaster = DISASTERS.find(d => d.type === state.currentDisaster);
+        let outcome: 'clean' | 'damaged' | 'injured' | 'both' = 'clean';
+        if (disaster) {
+          const required = disaster.requiredResources;
+          const entries = Object.entries(required);
+          if (entries.length > 0) {
+            let totalRatio = 0;
+            for (const [key, value] of entries) {
+              const actual = state.resources[key as ResourceType] ?? 0;
+              const needed = value as number;
+              totalRatio += Math.min(1, needed > 0 ? actual / needed : 1);
+            }
+            const avgRatio = totalRatio / entries.length;
+            if (avgRatio < 0.3) outcome = 'both';
+            else if (avgRatio < 0.6) outcome = Math.random() < 0.5 ? 'damaged' : 'injured';
+            else outcome = 'clean';
+          }
+        }
+
+        // Aplicar efectos del outcome
+        const newShelterLevel = (outcome === 'damaged' || outcome === 'both') ? Math.max(0, state.shelterLevel - 1) : state.shelterLevel;
+        const newShelterDamaged = outcome === 'damaged' || outcome === 'both';
+        const newInjuredUntilDay = (outcome === 'injured' || outcome === 'both') ? 2 : null; // herido hasta día 2 de la siguiente semana
+
         const newHighScore = Math.max(state.highScore, state.week);
+        const outcomeIcon = outcome === 'clean' ? '🏆' : outcome === 'damaged' ? '🏚️' : outcome === 'injured' ? '🩹' : '💔';
+        const outcomeText = outcome === 'clean'
+          ? `Sobreviví al desastre de la semana ${state.week} sin daños.`
+          : outcome === 'damaged'
+          ? `Sobreviví al desastre de la semana ${state.week}, pero el refugio quedó dañado.`
+          : outcome === 'injured'
+          ? `Sobreviví al desastre de la semana ${state.week}, pero salí herido.`
+          : `Sobreviví al desastre de la semana ${state.week}, pero el refugio quedó dañado y salí herido.`;
+
         const updatedState: GameState = {
           ...state,
           resources: newResources,
           phase: 'survival_result',
           highScore: newHighScore,
+          shelterLevel: newShelterLevel,
+          shelterDamaged: newShelterDamaged,
+          injuredUntilDay: newInjuredUntilDay,
           history: [
             ...state.history,
             {
@@ -504,17 +573,17 @@ function gameReducer(state: GameState, action: GameAction): GameState {
               survived: true,
               resourcesBefore: state.resources,
               resourcesAfter: newResources,
+              outcome,
             },
           ],
-          // Añadir entrada de diario por sobrevivir
           journalEntries: [
             ...state.journalEntries,
             {
               id: 'disaster_survived_' + state.week + '_' + Date.now(),
               week: state.week,
               day: 7,
-              text: `Sobreviví al desastre de la semana ${state.week}.`,
-              icon: '🏆',
+              text: outcomeText,
+              icon: outcomeIcon,
               type: 'disaster',
             },
           ],
@@ -578,10 +647,16 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         newResources[key as ResourceType] = Math.max(0, newResources[key as ResourceType] - (value as number));
       }
 
+      const newLevel = state.shelterLevel + 1;
+      // Al llegar a nivel 3, aumentar energía máxima
+      const energyMaxUpgrade = (newLevel >= 3 && state.energyMax < 6) ? state.energyMax + 1 : state.energyMax;
+
       return {
         ...state,
-        shelterLevel: state.shelterLevel + 1,
+        shelterLevel: newLevel,
         resources: newResources,
+        energyMax: energyMaxUpgrade,
+        energyCurrent: Math.min(state.energyCurrent, energyMaxUpgrade),
       };
     }
 
@@ -606,10 +681,16 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         }
       }
 
+      // Aumentar energyMax al llegar a nivel 3 de refugio
+      const newShelterLevel = state.shelterLevel; // no cambia en craft
+      const newEnergyMaxCraft = (newShelterLevel >= 3 && state.energyMax < 6) ? state.energyMax + 1 : state.energyMax;
+
       return {
         ...state,
         resources: newResources,
         shelterDefenseBoost: state.shelterDefenseBoost + (recipe.result.defenseBoost ?? 0),
+        craftedToday: true,
+        energyMax: newEnergyMaxCraft,
       };
     }
 
@@ -646,6 +727,32 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const socialMissionIds = generateSocialMissions(state.week + 1);
       const normalMissionIds = generateWeeklyMissions(state.week + 1);
 
+      // Calcular ubicaciones agotadas (20% de las common visitadas)
+      const visitedCommonIds = state.visitedLocations.filter(
+        id => !id.startsWith('roaming_') && !id.startsWith('event_') && !id.startsWith('npc_')
+      );
+      const toDeplete = visitedCommonIds.slice(0, Math.max(0, Math.floor(visitedCommonIds.length * 0.2)));
+      const newDepletedIds = [...new Set([...state.depletedLocationIds, ...toDeplete])];
+
+      // Calcular tipos debilitados por el desastre de esta semana
+      const newWeakenedTypes = getWeakenedTypesByDisaster(state.currentDisaster);
+
+      // Detectar tensiones entre facciones
+      const rep = state.factionReputation;
+      const newTensions = [...state.activeFactionTensions];
+      if (rep.survivors >= 5 && rep.outlaws >= 5) {
+        const tensionId = 'survivors_outlaws_' + (state.week + 1);
+        if (!newTensions.find(t => t.id === tensionId)) {
+          newTensions.push({ id: tensionId, factionA: 'survivors', factionB: 'outlaws', weekStarted: state.week + 1 });
+        }
+      }
+      if (rep.military >= 5 && rep.outlaws >= 3) {
+        const tensionId = 'military_outlaws_' + (state.week + 1);
+        if (!newTensions.find(t => t.id === tensionId)) {
+          newTensions.push({ id: tensionId, factionA: 'military', factionB: 'outlaws', weekStarted: state.week + 1 });
+        }
+      }
+
       return {
         ...state,
         week: state.week + 1,
@@ -655,6 +762,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         currentDisaster: null,
         predictedDisaster: null,
         shelterDefenseBoost: 0,
+        shelterDamaged: false,
         phase: 'playing',
         dayStartTime: Date.now(),
         currentWeather: getAdjustedWeather(state.week + 1, 1).type,
@@ -663,6 +771,11 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         activeRumors: state.activeRumors.filter((r) => !expiredRumorIds.includes(r.id)),
         completedRumors: [...state.completedRumors, ...expiredRumorIds],
         activeCompanions: updatedCompanions,
+        craftedToday: false,
+        energyCurrent: state.energyMax,
+        depletedLocationIds: newDepletedIds,
+        weakenedLocationTypes: newWeakenedTypes,
+        activeFactionTensions: newTensions,
       };
     }
 
@@ -689,6 +802,14 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         metNPCs: [],
         factionAlliance: null,
         factionAllianceWeek: 0,
+              craftedToday: false,
+        energyMax: 5,
+        energyCurrent: 5,
+        injuredUntilDay: null,
+        shelterDamaged: false,
+        depletedLocationIds: [],
+        weakenedLocationTypes: [],
+        activeFactionTensions: [],
       };
 
     case 'SET_WEATHER':
@@ -933,6 +1054,12 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         ],
       };
     }
+
+    case 'USE_ENERGY':
+      return { ...state, energyCurrent: Math.max(0, state.energyCurrent - action.amount) };
+
+    case 'RESTORE_ENERGY':
+      return { ...state, energyCurrent: Math.min(state.energyMax, state.energyCurrent + action.amount) };
 
     default:
       return state;

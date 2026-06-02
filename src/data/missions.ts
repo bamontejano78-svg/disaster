@@ -31,7 +31,7 @@ export const MISSIONS: Mission[] = [
     description: 'Craftea un objeto en el refugio.',
     icon: '🔧',
     type: 'daily',
-    condition: (state: GameState) => state.visitedLocations.length > 0 && state.day > 1,
+    condition: (state: GameState) => state.craftedToday === true,
     reward: { materials: 2 },
     globalScoreBonus: 30,
   },

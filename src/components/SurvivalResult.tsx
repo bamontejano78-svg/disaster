@@ -8,8 +8,19 @@ export default function SurvivalResult() {
   const lastRecord = state.history[state.history.length - 1];
   const disaster = DISASTERS.find((d) => d.type === state.currentDisaster);
   const survived = lastRecord?.survived ?? false;
+  const outcome = lastRecord?.outcome ?? 'clean';
 
   if (!disaster) return null;
+
+  const outcomeConfig = {
+    clean: { icon: '🏆', label: 'Supervivencia limpia', color: 'text-emerald-300', bg: 'bg-emerald-500/10 border-emerald-500/20' },
+    damaged: { icon: '🏚️', label: 'Refugio dañado', color: 'text-amber-300', bg: 'bg-amber-500/10 border-amber-500/20' },
+    injured: { icon: '🩹', label: 'Saliste herido', color: 'text-orange-300', bg: 'bg-orange-500/10 border-orange-500/20' },
+    both: { icon: '💔', label: 'Refugio dañado y herido', color: 'text-red-300', bg: 'bg-red-500/10 border-red-500/20' },
+    failed: { icon: '💀', label: 'Fin del juego', color: 'text-red-400', bg: 'bg-red-900/20 border-red-500/30' },
+  };
+
+  const oc = outcomeConfig[outcome] ?? outcomeConfig.clean;
 
   return (
     <div className="absolute inset-0 z-[3000] flex items-center justify-center p-4 bg-black/90">
@@ -23,7 +34,7 @@ export default function SurvivalResult() {
           }`}
         >
           <div className="text-5xl mb-2">
-            {survived ? '🏆' : '💀'}
+            {survived ? oc.icon : '💀'}
           </div>
           <h2 className="text-2xl font-black text-white uppercase tracking-wider">
             {survived
@@ -36,6 +47,25 @@ export default function SurvivalResult() {
               : `El ${disaster.name} de la Semana ${state.week} fue demasiado`}
           </p>
         </div>
+
+        {/* Outcome badge */}
+        {survived && outcome !== 'clean' && (
+          <div className={`mx-5 mt-4 px-4 py-3 rounded-xl border flex items-center gap-3 ${oc.bg}`}>
+            <span className="text-2xl">{oc.icon}</span>
+            <div>
+              <div className={`text-sm font-bold ${oc.color}`}>{oc.label}</div>
+              {outcome === 'damaged' && (
+                <div className="text-xs text-white/50 mt-0.5">El nivel del refugio bajó 1. Necesitarás reconstruir.</div>
+              )}
+              {outcome === 'injured' && (
+                <div className="text-xs text-white/50 mt-0.5">Estarás herido hasta el día 2 de la próxima semana. Energía reducida.</div>
+              )}
+              {outcome === 'both' && (
+                <div className="text-xs text-white/50 mt-0.5">Refugio dañado y herido. Recupera fuerzas antes de explorar.</div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Resources after */}
         <div className="p-5">

@@ -1797,6 +1797,17 @@ export function getRandomNPCEncounter(
 
   if (eligible.length === 0) return null;
 
+  // Si karma muy negativo, 30% de probabilidad de no encontrar NPCs de survivors/military
+  if (karma <= -5 && eligible.length > 0) {
+    const hostileFactions = ['survivors', 'military'];
+    const filtered = eligible.filter(enc => !enc.factionId || !hostileFactions.includes(enc.factionId));
+    if (filtered.length > 0 && Math.random() < 0.3) {
+      // Usar solo encuentros sin facción o de facciones no hostiles al karma bajo
+      const pick = filtered[Math.floor(Math.random() * filtered.length)];
+      return pick;
+    }
+  }
+
   const karmaModifier = karma / 50;
   const probability = 0.25 + karmaModifier;
 

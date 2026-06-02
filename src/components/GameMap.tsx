@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Circle, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Circle, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { useGame } from '../context/GameContext';
-import { generateNearbyLocations, LOCATION_COLORS } from '../data/resources';
+import { generateNearbyLocations, LOCATION_COLORS, scaleResourcesByWeek } from '../data/resources';
 import { generateExplorationEventWithBonus } from '../data/explorationEvents';
 import type { ExplorationEvent } from '../data/explorationEvents';
 import { generateRoamingEvent } from '../data/roamingEvents';
@@ -12,6 +12,7 @@ import { getCompanion } from '../data/companions';
 import { getRandomNPCEncounter } from '../data/npcEncounters';
 import type { NPCEncounter } from '../types/game';
 import { getWeather } from '../data/weather';
+import { getWeakenedTypesByDisaster } from '../data/disasters';
 import { fetchNearbyLocations, MIN_REAL_LOCATIONS } from '../data/overpassApi';
 import RadarMinimap from './RadarMinimap';
 import ExplorationEventModal from './ExplorationEventModal';
@@ -82,20 +83,21 @@ const TYPE_ICONS: Record<string, string> = {
   landmark: '🗿',
 };
 
-function createLocationIcon(type: string, visited: boolean = false): L.DivIcon {
-  const color = visited ? '#4b5563' : (LOCATION_COLORS[type] || '#888');
-  const iconChar = TYPE_ICONS[type] || '📍';
+function createLocationIcon(type: string, visited: boolean = false, depleted: boolean = false): L.DivIcon {
+  const color = depleted ? '#374151' : visited ? '#4b5563' : (LOCATION_COLORS[type] || '#888');
+  const iconChar = depleted ? '🚫' : (TYPE_ICONS[type] || '📍');
+  const opacity = depleted ? '0.4' : visited ? '0.6' : '1';
   return L.divIcon({
     html: '<div style="' +
       'width:28px;height:28px;' +
       'background:' + color + ';' +
-      'border:2px solid ' + (visited ? '#6b7280' : 'white') + ';' +
+      'border:2px solid ' + (depleted ? '#4b5563' : visited ? '#6b7280' : 'white') + ';' +
       'border-radius:8px;display:flex;' +
       'align-items:center;justify-content:center;' +
       'font-size:14px;' +
       'box-shadow:0 2px 8px rgba(0,0,0,0.4);' +
       'transform:rotate(45deg);' +
-      'opacity:' + (visited ? '0.6' : '1') + ';' +
+      'opacity:' + opacity + ';' +
       'transition:all 0.3s ease;' +
     '><span style="transform:rotate(-45deg)">' + iconChar + '</span></div>',
     className: '',
@@ -417,24 +419,49 @@ export default function GameMap() {
 
   const handleCollect = useCallback(
     (location: ResourceLocation) => {
-      // Apply weather multiplier to resources
+      // Apply weather multiplier
       const weatherMultiplier = state.currentWeather
         ? getWeather(state.currentWeather).resourceMultiplier
         : 1.0;
+
+      // Apply week scaling
+      let scaledResources = scaleResourcesByWeek(location.resources, state.week, location.rarity);
+
+      // Apply weakened type penalty (50% if type was affected by last disaster)
+      const isWeakened = state.weakenedLocationTypes.includes(location.type);
+      if (isWeakened) {
+        const weakened: Partial<Resources> = {};
+        for (const [key, value] of Object.entries(scaledResources)) {
+          weakened[key as ResourceType] = Math.max(1, Math.round((value as number) * 0.5));
+        }
+        scaledResources = weakened;
+      }
+
       const modifiedResources: Partial<Resources> = {};
-      for (const [key, value] of Object.entries(location.resources)) {
+      for (const [key, value] of Object.entries(scaledResources)) {
         modifiedResources[key as ResourceType] = Math.round((value as number) * weatherMultiplier);
       }
+
       collectResources(location.id, modifiedResources);
       setSelectedLocation(null);
-      const entries = Object.entries(location.resources);
+
+      const entries = Object.entries(modifiedResources);
       if (entries.length > 0) {
         const [resType, resVal] = entries[0];
-        const actualVal = Math.round((resVal as number) * weatherMultiplier);
-        showToast(RESOURCE_ICONS[resType as ResourceType] || '📦', actualVal + ' ' + resType);
+        showToast(RESOURCE_ICONS[resType as ResourceType] || '📦', (resVal as number) + ' ' + resType + (isWeakened ? ' ⚠️' : ''));
       }
-      // Posible evento de exploracion
-      const ev = generateExplorationEventWithBonus(location.type, location.rarity);
+
+      // Auto-claim matching rumors
+      const matchingRumor = state.activeRumors.find(
+        r => (r.type === 'hidden_supply' || r.type === 'location_bonus') && r.locationType === location.type && !r.claimed
+      );
+      if (matchingRumor) {
+        dispatch({ type: 'CLAIM_RUMOR', rumorId: matchingRumor.id });
+        showToast('🔍', 'Rumor confirmado');
+      }
+
+      // Posible evento de exploración
+      const ev = generateExplorationEventWithBonus(location.type, location.rarity, state.karma);
       if (ev) {
         if (ev.effect) {
           collectResources('event_' + ev.id, ev.effect);
@@ -442,18 +469,19 @@ export default function GameMap() {
         setExplorationEvent(ev);
       }
       // Posible encuentro NPC
-      const npcEncounter = getRandomNPCEncounter(location.type, state.karma);
+      const npcEncounter = getRandomNPCEncounter(location.type, state.karma, state.factionReputation, state.npcRelationships, state.metNPCs);
       if (npcEncounter) {
         setEncounter(npcEncounter);
       }
     },
-    [collectResources, showToast, dispatch, state.currentWeather, state.karma]
+    [collectResources, showToast, dispatch, state.currentWeather, state.karma, state.week, state.weakenedLocationTypes, state.activeRumors, state.factionReputation, state.npcRelationships, state.metNPCs]
   );
 
-  // Filtrar solo visitas a ubicaciones reales (excluir eventos deambulantes y de exploración)
-  const canVisit = state.visitedLocations.filter(
+  // Usar sistema de energía en lugar del límite fijo de 5 visitas
+  const canVisit = state.energyCurrent > 0;
+  const visitCount = state.visitedLocations.filter(
     id => !id.startsWith('roaming_') && !id.startsWith('event_')
-  ).length < 5;
+  ).length;
 
   // ─── Roaming events timer ───
   // Cada ~2 minutos, posibilidad de evento deambulante.
@@ -568,6 +596,19 @@ export default function GameMap() {
 
   return (
     <div className="relative w-full h-full">
+      {/* Simulation toggle button — always visible */}
+      <button
+        onClick={() => setSimulationMode(v => !v)}
+        className={`absolute bottom-36 left-3 z-[1000] glass-card rounded-full w-11 h-11 flex items-center justify-center border transition-all duration-200 hover:scale-110 active:scale-90 ${
+          simulationMode
+            ? 'border-amber-500/50 bg-amber-500/20 text-amber-300'
+            : 'border-white/10 hover:border-amber-500/30 text-white/50 hover:text-amber-300'
+        }`}
+        title={simulationMode ? 'Desactivar modo simulación' : 'Activar modo simulación'}
+      >
+        🕹️
+      </button>
+
       {/* GPS Error Banner */}
       {gpsError && (
         <div className="absolute top-3 left-3 right-3 z-[1000] glass-card border-red-500/30 text-white text-xs px-4 py-3 rounded-2xl flex items-center justify-between animate-slide-up">
@@ -637,13 +678,13 @@ export default function GameMap() {
           {showFactionZones ? '🏴 Zonas visibles' : '🏳️ Zonas ocultas'}
         </button>
 
-        {/* Visit counter */}
+        {/* Energy counter */}
         <div className="pointer-events-auto glass-card rounded-xl px-3 py-1.5 text-xs font-mono border-white/10">
-          <span className="text-white/50">Visitas hoy: </span>
+          <span className="text-white/50">Energía: </span>
           <span className={`font-bold ${
             !canVisit ? 'text-red-400' : 'text-gradient-cyan'
           }`}>
-            {state.visitedLocations.filter(id => !id.startsWith('roaming_') && !id.startsWith('event_')).length} / 5
+            {state.energyCurrent}/{state.energyMax} 🥾
           </span>
         </div>
       </div>
@@ -658,7 +699,7 @@ export default function GameMap() {
           visitedLocations={state.visitedLocations}
           canVisit={canVisit}
           onSelectLocation={(loc) => {
-            if (canVisit) setSelectedLocation(loc);
+            if (canVisit && !state.depletedLocationIds.includes(loc.id)) setSelectedLocation(loc);
           }}
         />
       )}
@@ -742,25 +783,17 @@ export default function GameMap() {
           <Marker
             key={loc.id}
             position={[loc.lat, loc.lng]}
-            icon={createLocationIcon(loc.type, state.visitedLocations.includes(loc.id))}
+            icon={createLocationIcon(
+              loc.type,
+              state.visitedLocations.includes(loc.id),
+              state.depletedLocationIds.includes(loc.id)
+            )}
             eventHandlers={{
               click: () => {
-                if (canVisit) setSelectedLocation(loc);
+                if (canVisit && !state.depletedLocationIds.includes(loc.id)) setSelectedLocation(loc);
               },
             }}
-          >
-            {selectedLocation?.id === loc.id && (
-              <Popup>
-                <LocationInfo
-                  location={loc}
-                  onCollect={() => handleCollect(loc)}
-                  visitedToday={state.visitedLocations.includes(loc.id)}
-                  playerLat={state.playerLat}
-                  playerLng={state.playerLng}
-                />
-              </Popup>
-            )}
-          </Marker>
+          />
         ))}
 
         {/* Faction territory zones */}
@@ -773,6 +806,27 @@ export default function GameMap() {
             visible={showFactionZones}
           />
         )}
+
+        {/* Rumor markers for hidden_supply and location_bonus */}
+        {state.activeRumors
+          .filter(r => (r.type === 'hidden_supply' || r.type === 'location_bonus') && r.locationType)
+          .map(rumor => {
+            const targetLoc = locations.find(l => l.type === rumor.locationType);
+            if (!targetLoc) return null;
+            const rumorIcon = L.divIcon({
+              html: '<div style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:20px;filter:drop-shadow(0 0 6px #fbbf24);animation:pulse 1.5s infinite;">❓</div>',
+              className: '',
+              iconSize: [32, 32],
+              iconAnchor: [16, 16],
+            });
+            return (
+              <Marker
+                key={'rumor_' + rumor.id}
+                position={[targetLoc.lat, targetLoc.lng]}
+                icon={rumorIcon}
+              />
+            );
+          })}
       </MapContainer>
 
       {/* Location detail modal (mobile friendly) */}

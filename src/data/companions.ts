@@ -58,8 +58,8 @@ export const COMPANIONS: Companion[] = [
     relationshipMin: 70,
     passiveBonus: { fuel: 1, materials: 1 },
     defenseBonus: 15,
-    cost: { food: 1, water: 1, fuel: 1 },
-    maxDuration: 2,
+    cost: { food: 1, water: 1 },
+    maxDuration: 3,
   },
   {
     id: 'bandit_scout',

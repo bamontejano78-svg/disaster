@@ -1,8 +1,31 @@
 import { useGame } from '../context/GameContext';
-import { getCompanion } from '../data/companions';
+import { COMPANIONS, getCompanion } from '../data/companions';
+import { RESOURCE_ICONS } from '../types/game';
+import type { ResourceType } from '../types/game';
 
 interface Props {
   onClose: () => void;
+}
+
+function NetBalance({ passiveBonus, cost }: { passiveBonus: Partial<Record<string, number>>; cost: Partial<Record<string, number>> }) {
+  const net: Record<string, number> = {};
+  for (const [k, v] of Object.entries(passiveBonus)) {
+    net[k] = (net[k] ?? 0) + (v as number);
+  }
+  for (const [k, v] of Object.entries(cost)) {
+    net[k] = (net[k] ?? 0) - (v as number);
+  }
+  const entries = Object.entries(net).filter(([, v]) => v !== 0);
+  if (entries.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-1 mt-1">
+      {entries.map(([k, v]) => (
+        <span key={k} className={`inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded ${v > 0 ? 'text-emerald-400 bg-emerald-900/30' : 'text-red-400 bg-red-900/30'}`}>
+          {RESOURCE_ICONS[k as ResourceType] ?? '📦'}{v > 0 ? '+' : ''}{v}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 export default function CompanionPanel({ onClose }: Props) {
@@ -12,6 +35,11 @@ export default function CompanionPanel({ onClose }: Props) {
   const handleDismiss = (companionId: string) => {
     dispatch({ type: 'DISMISS_COMPANION', companionId });
   };
+
+  // Compañeros disponibles (no activos)
+  const availableCompanions = COMPANIONS.filter(
+    c => !activeCompanions.find(ac => ac.companionId === c.id)
+  );
 
   return (
     <div className="fixed inset-0 z-[4000] flex items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in">
@@ -102,6 +130,12 @@ export default function CompanionPanel({ onClose }: Props) {
                     </div>
                   )}
 
+                  {/* Net balance */}
+                  <div className="mb-2">
+                    <div className="text-[10px] text-white/30 uppercase tracking-wider mb-1">Balance neto/día</div>
+                    <NetBalance passiveBonus={companion.passiveBonus} cost={companion.cost} />
+                  </div>
+
                   {/* Dismiss button */}
                   <button
                     onClick={() => handleDismiss(comp.companionId)}
@@ -112,6 +146,29 @@ export default function CompanionPanel({ onClose }: Props) {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* Available companions section */}
+        {availableCompanions.length > 0 && (
+          <div className="mb-4">
+            <div className="text-[10px] text-white/30 uppercase tracking-wider font-bold mb-2">Compañeros disponibles</div>
+            <div className="space-y-2">
+              {availableCompanions.map(companion => (
+                <div key={companion.id} className="p-3 rounded-xl bg-white/5 border border-white/5">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-xl">{companion.icon}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-bold text-white/70 truncate">{companion.name}</div>
+                      <div className="text-[10px] text-white/30 truncate">{companion.description}</div>
+                    </div>
+                  </div>
+                  <div className="text-[10px] text-white/30 mb-1">Balance neto/día:</div>
+                  <NetBalance passiveBonus={companion.passiveBonus} cost={companion.cost} />
+                  <div className="text-[10px] text-white/20 mt-1">Relación mínima: {companion.relationshipMin} pts · Duración: {companion.maxDuration} sem</div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

@@ -266,6 +266,25 @@ export function generateNearbyLocations(
   }));
 }
 
+/**
+ * Escala los recursos de una ubicación según la semana actual del juego.
+ * Fórmula: multiplier = 1 + (week - 1) * 0.15 + rarityBonus * (week - 1)
+ */
+export function scaleResourcesByWeek(
+  resources: Partial<Resources>,
+  week: number,
+  rarity?: 'common' | 'rare' | 'legendary'
+): Partial<Resources> {
+  if (week <= 1) return resources;
+  const rarityBonus = rarity === 'legendary' ? 0.2 : rarity === 'rare' ? 0.1 : 0;
+  const multiplier = 1 + (week - 1) * 0.15 + (week - 1) * rarityBonus;
+  const scaled: Partial<Resources> = {};
+  for (const [key, value] of Object.entries(resources)) {
+    scaled[key as keyof Resources] = Math.max(1, Math.round((value as number) * multiplier));
+  }
+  return scaled;
+}
+
 export const LOCATION_COLORS: Record<string, string> = {
   supermarket: '#f59e0b',
   pharmacy: '#ef4444',

@@ -1,4 +1,4 @@
-import type { Disaster } from '../types/game';
+import type { Disaster, LocationType } from '../types/game';
 
 export const DISASTERS: Disaster[] = [
   {
@@ -150,4 +150,24 @@ export function calculateDisasterDifficulty(
     }
   }
   return scaled;
+}
+
+/**
+ * Devuelve los tipos de ubicación debilitados por un desastre específico.
+ * Las ubicaciones de estos tipos tendrán recursos reducidos al 50% la semana siguiente.
+ */
+export function getWeakenedTypesByDisaster(disaster: DisasterType | null): LocationType[] {
+  if (!disaster) return [];
+  const map: Partial<Record<DisasterType, LocationType[]>> = {
+    flood: ['park', 'urban_garden', 'water_facility'],
+    wildfire: ['park', 'urban_garden'],
+    earthquake: ['construction_site', 'hardware'],
+    storm: ['gas_station', 'mechanical_workshop'],
+    heatwave: ['park', 'urban_garden', 'water_facility'],
+    tsunami: ['park', 'water_facility', 'gas_station'],
+    plague: ['pharmacy', 'hospital', 'clinic'],
+    tornado: ['construction_site', 'hardware', 'mechanical_workshop'],
+    blizzard: ['park', 'urban_garden', 'gas_station'],
+  };
+  return map[disaster] ?? [];
 }
