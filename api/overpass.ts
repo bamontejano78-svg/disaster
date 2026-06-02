@@ -33,7 +33,7 @@ export default async function handler(req: any, res: any) {
 
   for (const endpoint of ENDPOINTS) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 18000);
+    const timer = setTimeout(() => controller.abort(), 24000);
 
     try {
       const response = await fetch(endpoint, {

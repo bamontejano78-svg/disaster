@@ -90,16 +90,13 @@ interface OsmElement {
 interface OverpassResponse { elements: OsmElement[]; }
 
 // ─── Configuration ───
-// Llamar directamente a Overpass — soporta CORS (Access-Control-Allow-Origin: *)
-// Se prueban varios mirrors en orden para mayor fiabilidad
-const OVERPASS_ENDPOINTS = [
-  'https://overpass.kumi.systems/api/interpreter',
-  'https://overpass-api.de/api/interpreter',
-  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
-];
+// El proxy de Vercel es necesario — los endpoints públicos de Overpass
+// bloquean CORS desde dominios de producción (vercel.app, etc.)
+const OVERPASS_PROXY = '/api/overpass';
 const SEARCH_RADIUS = 2000; // metros
 const MAX_LOCATIONS = 30;
-const REQUEST_TIMEOUT = 20000; // 20s directo — sin cold start de proxy
+// Sin AbortController en el cliente — el timeout lo maneja el proxy (18s)
+// y Vercel tiene 30s máximo de función serverless
 export const MIN_REAL_LOCATIONS = 3;
 
 // ─── Cache ───
@@ -111,11 +108,9 @@ function getCacheKey(lat: number, lng: number): string {
 }
 
 // ─── Build Overpass query ───
-// Estrategia: una línea por tag, nodes + ways + relations, out center para obtener coords
-function buildUnifiedQuery(lat: number, lng: number): string {
-  const tagPairs = Object.keys(TAG_CATEGORY_MAP);
-
-  // Agrupar valores por key para usar regex OR y reducir líneas
+// Query minimalista: solo los tags más comunes en OSM urbano
+// Separada en dos llamadas paralelas para no exceder el timeout del servidor
+function buildQuery(lat: number, lng: number, tagPairs: string[]): string {
   const byKey: Record<string, string[]> = {};
   for (const pair of tagPairs) {
     const eqIdx = pair.indexOf('=');
@@ -127,23 +122,52 @@ function buildUnifiedQuery(lat: number, lng: number): string {
 
   const lines: string[] = [];
   for (const [key, values] of Object.entries(byKey)) {
-    // Escapar caracteres especiales de regex en los valores
     const escaped = values.map(v => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
     const pattern = escaped.join('|');
     const filter = `["${key}"~"^(${pattern})$"]`;
     const around = `(around:${SEARCH_RADIUS},${lat},${lng})`;
-    // Incluir node, way y relation
     lines.push(`  node${filter}${around};`);
     lines.push(`  way${filter}${around};`);
     lines.push(`  relation${filter}${around};`);
   }
 
-  // out center: devuelve el centroide de ways/relations en vez de toda la geometría
-  // qt: orden por quad-tile (más rápido)
-  return `[out:json][timeout:20];\n(\n${lines.join('\n')}\n);\nout center qt;`;
+  return `[out:json][timeout:18];\n(\n${lines.join('\n')}\n);\nout center qt;`;
 }
 
-// ─── Main fetch — directo a Overpass, sin proxy ───
+// Tags divididos en dos grupos para dos queries más ligeras en paralelo
+const TAGS_A = [
+  'amenity=restaurant', 'amenity=cafe', 'amenity=fast_food', 'amenity=bar',
+  'amenity=pub', 'amenity=pharmacy', 'amenity=hospital', 'amenity=clinic',
+  'amenity=fuel', 'amenity=school', 'amenity=library', 'amenity=bank',
+  'amenity=post_office', 'amenity=place_of_worship', 'amenity=community_centre',
+  'amenity=fountain', 'amenity=drinking_water', 'amenity=police',
+];
+const TAGS_B = [
+  'shop=supermarket', 'shop=convenience', 'shop=bakery', 'shop=hardware',
+  'shop=doityourself', 'shop=car_repair', 'shop=clothes', 'shop=greengrocer',
+  'leisure=park', 'leisure=garden', 'leisure=sports_centre', 'leisure=swimming_pool',
+  'tourism=hotel', 'tourism=museum', 'tourism=camp_site', 'tourism=attraction',
+  'landuse=allotments', 'landuse=forest', 'man_made=water_tower',
+];
+
+// ─── Fetch via proxy — una query al servidor Vercel que llama a Overpass ───
+async function fetchQuery(query: string): Promise<OsmElement[]> {
+  const response = await fetch(OVERPASS_PROXY, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `data=${encodeURIComponent(query)}`,
+    // Sin AbortController — el timeout lo controla el proxy (18s) y Vercel (30s max)
+  });
+
+  if (!response.ok) {
+    throw new Error(`Proxy HTTP ${response.status}`);
+  }
+
+  const data: OverpassResponse = await response.json();
+  return data.elements ?? [];
+}
+
+// ─── Main fetch ───
 export async function fetchNearbyLocations(lat: number, lng: number): Promise<ResourceLocation[]> {
   const cacheKey = getCacheKey(lat, lng);
   const cached = locationCache.get(cacheKey);
@@ -152,49 +176,34 @@ export async function fetchNearbyLocations(lat: number, lng: number): Promise<Re
     return cached.locations;
   }
 
-  const query = buildUnifiedQuery(lat, lng);
   console.log(`[OSM] Querying (${lat.toFixed(4)}, ${lng.toFixed(4)}) r=${SEARCH_RADIUS}m`);
 
-  for (const endpoint of OVERPASS_ENDPOINTS) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+  // Lanzar las dos queries en paralelo — cada una es más pequeña y rápida
+  const queryA = buildQuery(lat, lng, TAGS_A);
+  const queryB = buildQuery(lat, lng, TAGS_B);
 
-    try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `data=${encodeURIComponent(query)}`,
-        signal: controller.signal,
-      });
-      clearTimeout(timer);
+  const [resultsA, resultsB] = await Promise.allSettled([
+    fetchQuery(queryA),
+    fetchQuery(queryB),
+  ]);
 
-      if (!response.ok) {
-        console.warn(`[OSM] ${endpoint} → HTTP ${response.status}`);
-        continue;
-      }
+  const allElements: OsmElement[] = [];
+  if (resultsA.status === 'fulfilled') allElements.push(...resultsA.value);
+  else console.warn('[OSM] Query A failed:', resultsA.reason);
+  if (resultsB.status === 'fulfilled') allElements.push(...resultsB.value);
+  else console.warn('[OSM] Query B failed:', resultsB.reason);
 
-      const data: OverpassResponse = await response.json();
-      const rawCount = data.elements?.length ?? 0;
-      console.log(`[OSM] Raw elements: ${rawCount} from ${endpoint}`);
+  console.log(`[OSM] Raw elements: ${allElements.length}`);
 
-      if (!data.elements || rawCount === 0) continue;
+  if (allElements.length === 0) return [];
 
-      const locations = mapOsmToLocations(data.elements);
-      console.log(`[OSM] Mapped: ${locations.length} game locations`);
+  const locations = mapOsmToLocations(allElements);
+  console.log(`[OSM] Mapped: ${locations.length} game locations`);
 
-      if (locations.length > 0) {
-        locationCache.set(cacheKey, { locations, timestamp: Date.now() });
-      }
-      return locations;
-    } catch (err: unknown) {
-      clearTimeout(timer);
-      console.warn(`[OSM] ${endpoint} failed:`, err instanceof Error ? err.message : err);
-      // Intentar con el siguiente endpoint
-    }
+  if (locations.length > 0) {
+    locationCache.set(cacheKey, { locations, timestamp: Date.now() });
   }
-
-  console.error('[OSM] All endpoints failed');
-  return [];
+  return locations;
 }
 
 // ─── Map OSM elements → game locations ───
