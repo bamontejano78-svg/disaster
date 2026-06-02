@@ -12,7 +12,6 @@ import { getCompanion } from '../data/companions';
 import { getRandomNPCEncounter } from '../data/npcEncounters';
 import type { NPCEncounter } from '../types/game';
 import { getWeather } from '../data/weather';
-import { getWeakenedTypesByDisaster } from '../data/disasters';
 import { fetchNearbyLocations, MIN_REAL_LOCATIONS } from '../data/overpassApi';
 import RadarMinimap from './RadarMinimap';
 import ExplorationEventModal from './ExplorationEventModal';
@@ -479,9 +478,6 @@ export default function GameMap() {
 
   // Usar sistema de energía en lugar del límite fijo de 5 visitas
   const canVisit = state.energyCurrent > 0;
-  const visitCount = state.visitedLocations.filter(
-    id => !id.startsWith('roaming_') && !id.startsWith('event_')
-  ).length;
 
   // ─── Roaming events timer ───
   // Cada ~2 minutos, posibilidad de evento deambulante.
@@ -764,17 +760,7 @@ export default function GameMap() {
                     }
                   : undefined
               }
-            >
-              <Popup>
-                <div className="text-center p-1">
-                  <strong>📍 Tú estás aquí</strong>
-                  <br />
-                  <span className="text-xs text-gray-500">
-                    Radio de recolección: {COLLECTION_RADIUS_METERS}m
-                  </span>
-                </div>
-              </Popup>
-            </Marker>
+            />
           </>
         )}
 

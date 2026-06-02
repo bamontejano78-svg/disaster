@@ -1,4 +1,4 @@
-import type { Disaster, LocationType } from '../types/game';
+import type { Disaster, DisasterType, LocationType } from '../types/game';
 
 export const DISASTERS: Disaster[] = [
   {

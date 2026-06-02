@@ -1,4 +1,4 @@
-import type { ResourceLocation } from '../types/game';
+import type { ResourceLocation, Resources } from '../types/game';
 
 /**
  * Genera ubicaciones de recursos alrededor de una posición central.
