@@ -90,13 +90,15 @@ interface OsmElement {
 interface OverpassResponse { elements: OsmElement[]; }
 
 // ─── Configuration ───
-// El proxy de Vercel es necesario — los endpoints públicos de Overpass
-// bloquean CORS desde dominios de producción (vercel.app, etc.)
-const OVERPASS_PROXY = '/api/overpass';
-const SEARCH_RADIUS = 2000; // metros
+// GitHub Pages es hosting estático — llamamos Overpass directamente.
+// github.io no está bloqueado por CORS en los mirrors públicos de Overpass.
+const OVERPASS_ENDPOINTS = [
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass-api.de/api/interpreter',
+];
+const SEARCH_RADIUS = 2000;
 const MAX_LOCATIONS = 30;
-// Sin AbortController en el cliente — el timeout lo maneja el proxy (18s)
-// y Vercel tiene 30s máximo de función serverless
+const REQUEST_TIMEOUT = 20000; // 20s por endpoint
 export const MIN_REAL_LOCATIONS = 3;
 
 // ─── Cache ───
@@ -150,21 +152,31 @@ const TAGS_B = [
   'landuse=allotments', 'landuse=forest', 'man_made=water_tower',
 ];
 
-// ─── Fetch via proxy — una query al servidor Vercel que llama a Overpass ───
+// ─── Fetch una query contra endpoints con fallback ───
 async function fetchQuery(query: string): Promise<OsmElement[]> {
-  const response = await fetch(OVERPASS_PROXY, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: `data=${encodeURIComponent(query)}`,
-    // Sin AbortController — el timeout lo controla el proxy (18s) y Vercel (30s max)
-  });
-
-  if (!response.ok) {
-    throw new Error(`Proxy HTTP ${response.status}`);
+  for (const endpoint of OVERPASS_ENDPOINTS) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `data=${encodeURIComponent(query)}`,
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      if (!response.ok) {
+        console.warn(`[OSM] ${endpoint} → HTTP ${response.status}`);
+        continue;
+      }
+      const data: OverpassResponse = await response.json();
+      return data.elements ?? [];
+    } catch (err) {
+      clearTimeout(timer);
+      console.warn(`[OSM] ${endpoint} failed:`, err instanceof Error ? err.message : err);
+    }
   }
-
-  const data: OverpassResponse = await response.json();
-  return data.elements ?? [];
+  return [];
 }
 
 // ─── Main fetch ───
@@ -178,23 +190,22 @@ export async function fetchNearbyLocations(lat: number, lng: number): Promise<Re
 
   console.log(`[OSM] Querying (${lat.toFixed(4)}, ${lng.toFixed(4)}) r=${SEARCH_RADIUS}m`);
 
-  // Lanzar las dos queries en paralelo — cada una es más pequeña y rápida
+  // Dos queries paralelas más ligeras
   const queryA = buildQuery(lat, lng, TAGS_A);
   const queryB = buildQuery(lat, lng, TAGS_B);
 
-  const [resultsA, resultsB] = await Promise.allSettled([
+  const [resA, resB] = await Promise.allSettled([
     fetchQuery(queryA),
     fetchQuery(queryB),
   ]);
 
   const allElements: OsmElement[] = [];
-  if (resultsA.status === 'fulfilled') allElements.push(...resultsA.value);
-  else console.warn('[OSM] Query A failed:', resultsA.reason);
-  if (resultsB.status === 'fulfilled') allElements.push(...resultsB.value);
-  else console.warn('[OSM] Query B failed:', resultsB.reason);
+  if (resA.status === 'fulfilled') allElements.push(...resA.value);
+  else console.warn('[OSM] Query A failed');
+  if (resB.status === 'fulfilled') allElements.push(...resB.value);
+  else console.warn('[OSM] Query B failed');
 
   console.log(`[OSM] Raw elements: ${allElements.length}`);
-
   if (allElements.length === 0) return [];
 
   const locations = mapOsmToLocations(allElements);
