@@ -251,8 +251,7 @@ export default function GameMap() {
   const toastIdRef = useRef(0);
   const [dataSource, setDataSource] = useState<'osm' | 'simulated' | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
-  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const fetchingRef = useRef(false); // prevent concurrent fetch cycles
+  const fetchingRef = useRef(false);
   const [explorationEvent, setExplorationEvent] = useState<ExplorationEvent | null>(null);
   const [roamingEvent, setRoamingEvent] = useState<RoamingEvent | null>(null);
   const [encounter, setEncounter] = useState<NPCEncounter | null>(null);
@@ -334,80 +333,77 @@ export default function GameMap() {
     };
   }, []);
 
-  // ─── Generate locations when player position changes ───
+  // ─── Generate locations when player position changes (debounced) ───
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
-    if (state.playerLat !== null && state.playerLng !== null) {
-      // Prevent concurrent fetch cycles (GPS can fire rapid position updates)
+    if (state.playerLat === null || state.playerLng === null) return;
+
+    // Debounce: esperar 1.5s después del último cambio de posición GPS
+    // Evita hacer fetches en cada update rápido del GPS al arrancar
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+
+    debounceRef.current = setTimeout(() => {
+      debounceRef.current = null;
+
+      // Si ya hay un fetch en curso, no lanzar otro
       if (fetchingRef.current) return;
       fetchingRef.current = true;
 
-      let cancelled = false;
+      const lat = state.playerLat!;
+      const lng = state.playerLng!;
+
       setLoadingLocations(true);
+      let active = true;
 
-      const doFetch = (lat: number, lng: number, isRetry: boolean) => {
-        fetchNearbyLocations(lat, lng)
-          .then((osmLocations) => {
-            if (cancelled) return;
-            setApiError(null);
-            if (osmLocations.length >= MIN_REAL_LOCATIONS) {
-              fetchingRef.current = false;
-              setLocations(osmLocations);
-              setDataSource('osm');
-              setLoadingLocations(false);
-            } else if (osmLocations.length > 0) {
-              fetchingRef.current = false;
-              const simulated = generateNearbyLocations(lat, lng);
-              const augmented = [...osmLocations, ...simulated.slice(0, 10 - osmLocations.length)];
-              setLocations(augmented);
-              setDataSource('osm');
-              setLoadingLocations(false);
-            } else if (!isRetry) {
-              // No results on first try — mobile GPS may still be warming up.
-              // Keep fetchingRef=true to block concurrent fetches while waiting
-              setApiError('Refinando ubicación GPS...');
-              setDataSource('simulated');
-              retryTimeoutRef.current = setTimeout(() => {
-                retryTimeoutRef.current = null;
-                if (cancelled) return;
-                doFetch(state.playerLat!, state.playerLng!, true);
-              }, 6000);
-            } else {
-              // Retry also returned 0 — truly no OSM data in this area
-              fetchingRef.current = false;
-              setApiError('Zona sin datos OSM');
-              const simulated = generateNearbyLocations(lat, lng);
-              setLocations(simulated);
-              setDataSource('simulated');
-              setLoadingLocations(false);
-            }
-          })
-          .catch((err: unknown) => {
-            if (cancelled) return;
-            fetchingRef.current = false;
-            const errorMsg = err instanceof Error ? err.message : String(err);
-            console.error('Overpass API error:', errorMsg);
-            setApiError(errorMsg);
-            const simulated = generateNearbyLocations(
-              state.playerLat!,
-              state.playerLng!
-            );
-            setLocations(simulated);
+      fetchNearbyLocations(lat, lng)
+        .then((osmLocations) => {
+          if (!active) return;
+          fetchingRef.current = false;
+          setApiError(null);
+
+          if (osmLocations.length >= MIN_REAL_LOCATIONS) {
+            setLocations(osmLocations);
+            setDataSource('osm');
+          } else if (osmLocations.length > 0) {
+            // Pocos resultados OSM — completar con simulados
+            const simulated = generateNearbyLocations(lat, lng);
+            const augmented = [...osmLocations, ...simulated.slice(0, 15 - osmLocations.length)];
+            setLocations(augmented);
+            setDataSource('osm');
+          } else {
+            // Sin resultados OSM — usar simulados
+            setApiError('Sin datos OSM para esta zona');
+            setLocations(generateNearbyLocations(lat, lng));
             setDataSource('simulated');
-            setLoadingLocations(false);
-          });
-      };
-
-      doFetch(state.playerLat, state.playerLng, false);
+          }
+          setLoadingLocations(false);
+        })
+        .catch((err: unknown) => {
+          if (!active) return;
+          fetchingRef.current = false;
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error('[GameMap] OSM fetch error:', msg);
+          setApiError(msg);
+          setLocations(generateNearbyLocations(lat, lng));
+          setDataSource('simulated');
+          setLoadingLocations(false);
+        });
 
       return () => {
-        cancelled = true;
+        active = false;
         fetchingRef.current = false;
-        if (retryTimeoutRef.current) {
-          clearTimeout(retryTimeoutRef.current);
-          retryTimeoutRef.current = null;
-        }
       };
-    }
+    }, 1500); // 1.5s debounce
+
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
+    };
   }, [state.playerLat, state.playerLng, state.week]);
 
   // ─── Default center ───

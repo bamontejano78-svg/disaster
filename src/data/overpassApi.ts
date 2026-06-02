@@ -82,7 +82,7 @@ interface OverpassResponse { elements: OsmElement[]; }
 const OVERPASS_PROXY = '/api/overpass';
 const SEARCH_RADIUS = 1500; // metros — más pequeño = respuesta más rápida
 const MAX_LOCATIONS = 25;
-const PROXY_TIMEOUT = 15000; // 15s — el proxy tiene 18s, dejamos margen
+const PROXY_TIMEOUT = 25000; // 25s — Vercel cold start + Overpass latency
 export const MIN_REAL_LOCATIONS = 3;
 
 // ─── Cache ───
