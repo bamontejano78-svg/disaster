@@ -90,10 +90,16 @@ interface OsmElement {
 interface OverpassResponse { elements: OsmElement[]; }
 
 // ─── Configuration ───
-const OVERPASS_PROXY = '/api/overpass';
+// Llamar directamente a Overpass — soporta CORS (Access-Control-Allow-Origin: *)
+// Se prueban varios mirrors en orden para mayor fiabilidad
+const OVERPASS_ENDPOINTS = [
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass-api.de/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+];
 const SEARCH_RADIUS = 2000; // metros
 const MAX_LOCATIONS = 30;
-const PROXY_TIMEOUT = 25000;
+const REQUEST_TIMEOUT = 20000; // 20s directo — sin cold start de proxy
 export const MIN_REAL_LOCATIONS = 3;
 
 // ─── Cache ───
@@ -137,7 +143,7 @@ function buildUnifiedQuery(lat: number, lng: number): string {
   return `[out:json][timeout:20];\n(\n${lines.join('\n')}\n);\nout center qt;`;
 }
 
-// ─── Main fetch ───
+// ─── Main fetch — directo a Overpass, sin proxy ───
 export async function fetchNearbyLocations(lat: number, lng: number): Promise<ResourceLocation[]> {
   const cacheKey = getCacheKey(lat, lng);
   const cached = locationCache.get(cacheKey);
@@ -149,43 +155,46 @@ export async function fetchNearbyLocations(lat: number, lng: number): Promise<Re
   const query = buildUnifiedQuery(lat, lng);
   console.log(`[OSM] Querying (${lat.toFixed(4)}, ${lng.toFixed(4)}) r=${SEARCH_RADIUS}m`);
 
-  try {
+  for (const endpoint of OVERPASS_ENDPOINTS) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), PROXY_TIMEOUT);
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
 
-    let response: Response;
     try {
-      response = await fetch(OVERPASS_PROXY, {
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: `data=${encodeURIComponent(query)}`,
         signal: controller.signal,
       });
-    } finally {
       clearTimeout(timer);
+
+      if (!response.ok) {
+        console.warn(`[OSM] ${endpoint} → HTTP ${response.status}`);
+        continue;
+      }
+
+      const data: OverpassResponse = await response.json();
+      const rawCount = data.elements?.length ?? 0;
+      console.log(`[OSM] Raw elements: ${rawCount} from ${endpoint}`);
+
+      if (!data.elements || rawCount === 0) continue;
+
+      const locations = mapOsmToLocations(data.elements);
+      console.log(`[OSM] Mapped: ${locations.length} game locations`);
+
+      if (locations.length > 0) {
+        locationCache.set(cacheKey, { locations, timestamp: Date.now() });
+      }
+      return locations;
+    } catch (err: unknown) {
+      clearTimeout(timer);
+      console.warn(`[OSM] ${endpoint} failed:`, err instanceof Error ? err.message : err);
+      // Intentar con el siguiente endpoint
     }
-
-    if (!response.ok) {
-      throw new Error(`Proxy HTTP ${response.status}`);
-    }
-
-    const data: OverpassResponse = await response.json();
-    const rawCount = data.elements?.length ?? 0;
-    console.log(`[OSM] Raw elements: ${rawCount}`);
-
-    if (!data.elements || rawCount === 0) return [];
-
-    const locations = mapOsmToLocations(data.elements);
-    console.log(`[OSM] Mapped: ${locations.length} game locations`);
-
-    if (locations.length > 0) {
-      locationCache.set(cacheKey, { locations, timestamp: Date.now() });
-    }
-    return locations;
-  } catch (err: unknown) {
-    console.error('[OSM] Fetch failed:', err instanceof Error ? err.message : err);
-    return [];
   }
+
+  console.error('[OSM] All endpoints failed');
+  return [];
 }
 
 // ─── Map OSM elements → game locations ───

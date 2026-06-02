@@ -345,8 +345,7 @@ export default function GameMap() {
       clearTimeout(debounceRef.current);
     }
 
-    debounceRef.current = setTimeout(() => {
-      debounceRef.current = null;
+    debounceRef.current = setTimeout(() => {      debounceRef.current = null;
 
       // Si ya hay un fetch en curso, no lanzar otro
       if (fetchingRef.current) return;
@@ -396,7 +395,7 @@ export default function GameMap() {
         active = false;
         fetchingRef.current = false;
       };
-    }, 1500); // 1.5s debounce
+    }, 2000); // 2s debounce — esperar a que el GPS se estabilice
 
     return () => {
       if (debounceRef.current) {
